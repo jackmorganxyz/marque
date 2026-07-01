@@ -4,6 +4,13 @@
   "description": "Sign an outbound agent message with a secp256k1 wallet key and verify which https origin sent it — no shared secret.",
   "type": "module",
   "license": "MIT",
+  "author": "Jack Morgan <contact@jackmorgan.xyz>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jackmorganxyz/marque.git"
+  },
+  "bugs": "https://github.com/jackmorganxyz/marque/issues",
+  "homepage": "https://github.com/jackmorganxyz/marque#readme",
   "keywords": ["agent", "signing", "identity", "verify", "well-known", "eip-191", "secp256k1", "a2a"],
   "sideEffects": false,
   "main": "./dist/marque.js",
@@ -25,7 +32,8 @@
     "build": "tsc && rm -f dist/marque.test.*",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test marque.test.ts",
-    "marque": "tsx bin/marque.ts"
+    "marque": "tsx bin/marque.ts",
+    "prepublishOnly": "npm test && npm run build"
   },
   "engines": {
     "node": ">=18"

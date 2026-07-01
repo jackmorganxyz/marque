@@ -1,5 +1,9 @@
 # Marque
 
+[![CI](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml/badge.svg)](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/marque)](https://www.npmjs.com/package/marque)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Let one AI agent **sign** an outbound message with its own secp256k1 wallet key, and let a receiving agent **verify** which entity (which https origin) sent it — **with no shared secret**.
 
 Trust is anchored in infrastructure the verifier already trusts: the sender publishes its wallet address at a static file on its *own* origin — `https://<origin>/.well-known/marque.json`, served over TLS — and the verifier reads the key straight from there. `verify()` returns an origin-level identity string like `https:eve.example.com`.
@@ -294,4 +298,6 @@ npm test            # node --import tsx --test marque.test.ts
 npm run build       # emits dist/
 ```
 
-MIT.
+CI runs typecheck + tests on every push and PR. Found a security issue? See [SECURITY.md](SECURITY.md).
+
+[MIT](LICENSE) © [Jack Morgan](https://jackmorgan.xyz)
