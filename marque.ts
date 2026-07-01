@@ -1,4 +1,4 @@
-// marque.ts — Marque core. Dep: viem@^2. Node 18+/Vercel.
+// marque.ts — Marque core. Deps: @noble/curves + @noble/hashes (via eth.ts). Node 18+/Vercel.
 //
 // Sign an outbound agent message with a secp256k1 wallet key; verify which
 // https origin sent it, with no shared secret. Trust is anchored in the
@@ -8,12 +8,13 @@
 //   - use a DEDICATED signing key (never reuse for SIWE / wallet-connect),
 //   - supply a SHARED nonce store in multi-instance deployments,
 //   - act ONLY on { ok: true } and check identity against your allowlist.
-import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import {
-  recoverMessageAddress, keccak256, stringToBytes, isAddressEqual,
-  type Hex, type Address,
-} from 'viem';
+  generatePrivateKey, privateKeyToAddress, signMessage, recoverMessageAddress,
+  keccak256, isAddressEqual, randomHex, type Hex, type Address,
+} from './eth.js';
 import { isIP } from 'node:net';
+
+export type { Hex, Address };
 
 export const SKEW = 300;            // seconds — max clock-skew window
 const DOMAIN = 'marque/v1\n';       // domain separator (red-team mitigation)
@@ -24,11 +25,11 @@ export interface Core {
 }
 export interface Signed extends Core { sig: Hex; payload: unknown; }
 
-// Deterministic sorted-key compact JSON (§5.2). NOT full RFC 8785: payloads
+// Deterministic sorted-key compact JSON. NOT full RFC 8785: payloads
 // must be JSON-safe primitives (see assertJsonSafe + README).
 export function canon(v: any): string {
   // Refuse anything canon can't reproduce byte-for-byte against JSON.stringify on
-  // the wire, so distinct values can't collide to one payload_hash (§8 #6):
+  // the wire, so distinct values can't collide to one payload_hash:
   //   - undefined / NaN / ±Infinity → JSON emits "null" (collision),
   //   - function / symbol → JSON drops them (canon-vs-wire mismatch),
   //   - bigint → JSON.stringify throws,
@@ -46,7 +47,7 @@ export function canon(v: any): string {
     .map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
 }
 
-// Reject payloads that canonicalize ambiguously across runtimes (§5.2).
+// Reject payloads that canonicalize ambiguously across runtimes.
 function assertJsonSafe(v: any): void {
   if (v === undefined) throw new Error('marque: undefined not JSON-safe');
   if (typeof v === 'number' &&
@@ -57,14 +58,14 @@ function assertJsonSafe(v: any): void {
   if (v && typeof v === 'object') for (const k of Object.keys(v)) assertJsonSafe(v[k]);
 }
 
-// Hash the UTF-8 BYTES of canon(p) — do NOT wrap in toHex/stringToHex, which
-// would hash the characters of the hex string and change the digest.
-const payloadHash = (p: unknown): Hex => keccak256(stringToBytes(canon(p)));
+// Hash of the UTF-8 BYTES of canon(p). Exported so interop implementations and
+// tests can reproduce payload_hash without signing.
+export const payloadHash = (p: unknown): Hex => keccak256(canon(p));
 const core = (c: Core): string => DOMAIN + canon(c);
 
 export function generateAgent(origin: string) {
   const privateKey = generatePrivateKey();
-  const { address } = privateKeyToAccount(privateKey);
+  const address = privateKeyToAddress(privateKey);
   return { privateKey, address, origin,
     wellKnown: { v: 1, keys: [address] } };   // serve at /.well-known/marque.json
 }
@@ -74,17 +75,17 @@ export async function sign(
   opts: { privateKey: Hex; origin: string; aud: string; ttl?: number },
 ): Promise<Signed> {
   assertJsonSafe(payload);
-  const account = privateKeyToAccount(opts.privateKey);
+  const address = privateKeyToAddress(opts.privateKey);
   const now = Math.floor(Date.now() / 1000);
-  const nonce = ('0x' + Buffer.from(crypto.getRandomValues(new Uint8Array(12)))
-    .toString('hex')) as Hex;
   const c: Core = {
-    v: 1, origin: opts.origin, signer: account.address, agent_id: account.address,
-    scope: '', aud: opts.aud, ts: now, exp: now + (opts.ttl ?? SKEW),
-    nonce, payload_hash: payloadHash(payload),
+    v: 1, origin: opts.origin, signer: address, agent_id: address,
+    scope: '', aud: opts.aud, ts: now,
+    // ttl is capped at SKEW: verify rejects |now - ts| > SKEW regardless, so a
+    // longer exp would only pretend to extend freshness it can't deliver.
+    exp: now + Math.min(opts.ttl ?? SKEW, SKEW),
+    nonce: randomHex(12), payload_hash: payloadHash(payload),
   };
-  const sig = await account.signMessage({ message: core(c) }); // EIP-191
-  return { ...c, sig, payload };
+  return { ...c, sig: signMessage(core(c), opts.privateKey), payload }; // EIP-191
 }
 
 // ---- Identity resolution (injectable). Default: HTTPS .well-known only. ----
@@ -97,7 +98,7 @@ function assertPublicHost(origin: string): void {
   try { host = new URL('https://' + origin).hostname; }
   catch { throw new Error('marque: bad origin'); }
   // URL normalizes shorthand/octal/hex IPv4 (127.1 → 127.0.0.1); isIP rejects EVERY
-  // IP literal form — the strict dotted-quad regex used to miss short forms (§8 #1).
+  // IP literal form — a strict dotted-quad regex would miss the short forms.
   if (isIP(host)) throw new Error('marque: ip origin not allowed');
   const h = host.replace(/\.$/, '').toLowerCase();
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') ||
@@ -133,7 +134,10 @@ export function cached(resolver: ResolveKeys, ttlMs = 60_000): ResolveKeys {
     const hit = m.get(origin);
     if (hit && Date.now() - hit.at < ttlMs) return hit.keys;
     const keys = await resolver(origin);
-    if (keys.length) m.set(origin, { at: Date.now(), keys });  // don't cache empties
+    if (keys.length) {                                         // don't cache empties
+      if (m.size >= 1000) m.delete(m.keys().next().value!);    // bound memory: evict oldest
+      m.set(origin, { at: Date.now(), keys });
+    }
     return keys;
   };
 }
@@ -144,7 +148,11 @@ const defaultResolver = cached(httpsResolver);
 
 // ---- verify ----
 
-export interface VerifyResult { ok: boolean; identity?: string; signer?: Address; reason?: string; }
+// Discriminated union: `if (r.ok)` narrows to { identity, signer } with no undefined-checks.
+// The never-set fields are declared `?: undefined` so `r.reason` also reads without narrowing.
+export type VerifyResult =
+  | { ok: true; identity: string; signer: Address; reason?: undefined }
+  | { ok: false; reason: string; identity?: undefined; signer?: undefined };
 
 export async function verify(
   msg: Signed,
@@ -185,7 +193,7 @@ export async function verify(
 
   let recovered: Address;
   try {
-    recovered = await recoverMessageAddress({ message: core(c as Core), signature: sig });
+    recovered = recoverMessageAddress(core(c as Core), sig);
     if (!isAddressEqual(recovered, c.signer)) return { ok: false, reason: 'signer mismatch' };
     if (!isAddressEqual(c.agent_id, c.signer)) return { ok: false, reason: 'agent/signer split not supported' };
   } catch { return { ok: false, reason: 'bad signature' }; }  // malformed sig / signer / agent_id
@@ -193,7 +201,7 @@ export async function verify(
   // Reserve the nonce now: authenticated, and synchronously before the resolve
   // await, so two concurrent copies of the same envelope can't both pass. Retain
   // to the message's OWN freshness horizon (ts + SKEW), not receipt time, else a
-  // clock-skewed receiver prunes it while the envelope is still fresh (§8 #5).
+  // clock-skewed receiver prunes it while the envelope is still fresh.
   if (seen) {
     if (seen.has(c.nonce)) return { ok: false, reason: 'replay' };
     seen.set(c.nonce, c.ts + SKEW + 1);
@@ -207,6 +215,8 @@ export async function verify(
   }
   // Canonicalize the identity label (case-insensitive host, trailing dot = same host)
   // so an exact-string allowlist can't be split by casing. Percent/IDN normalization
-  // + homograph checks remain the caller's job (README #3).
+  // + homograph checks remain the caller's job (README #3). The "https:" prefix (no
+  // slashes — it's a label, not a URL) namespaces the assurance backend, so future
+  // "dns:…" / "x:…" identities can't collide with TLS-anchored ones in an allowlist.
   return { ok: true, identity: `https:${c.origin.replace(/\.$/, '').toLowerCase()}`, signer: recovered };
 }

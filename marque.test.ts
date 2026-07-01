@@ -1,18 +1,17 @@
-// marque.test.ts — §9 self-checks + frozen regression vector.
+// marque.test.ts — self-checks + frozen regression vector.
 // Run: npm test   (node --import tsx --test marque.test.ts)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { privateKeyToAccount } from 'viem/accounts';
-import { keccak256, stringToBytes } from 'viem';
+import { privateKeyToAddress, signMessage, isAddressEqual } from './eth.js';
 import {
-  canon, sign, verify, generateAgent, httpsResolver, cached, SKEW,
+  canon, payloadHash, sign, verify, generateAgent, httpsResolver, cached, SKEW,
   type Signed, type ResolveKeys,
 } from './marque.js';
 
 const EVE = 'eve.example.com';
 const BOB = 'bob.example.com';
 
-// ---- 2. canon + payloadHash (§5.2) ----
+// ---- 2. canon + payloadHash ----
 test('canon sorts keys and stays compact', () => {
   assert.equal(canon({ b: 1, a: 2 }), '{"a":2,"b":1}');
   assert.equal(canon([3, 1]), '[3,1]');
@@ -21,8 +20,13 @@ test('canon sorts keys and stays compact', () => {
 });
 
 test('key order does not change the hash', () => {
-  const h = (p: unknown) => keccak256(stringToBytes(canon(p)));
-  assert.equal(h({ a: 1, b: { c: 2, d: 3 } }), h({ b: { d: 3, c: 2 }, a: 1 }));
+  assert.equal(payloadHash({ a: 1, b: { c: 2, d: 3 } }), payloadHash({ b: { d: 3, c: 2 }, a: 1 }));
+});
+
+test('isAddressEqual is case-insensitive and rejects non-addresses', () => {
+  const A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+  assert.equal(isAddressEqual(A, A.toLowerCase()), true);
+  assert.throws(() => isAddressEqual('junk', A), /bad address/);
 });
 
 test('canon refuses values whose canon form differs from the JSON wire', () => {
@@ -48,7 +52,7 @@ test('sign rejects unsafe numbers, accepts safe payloads', async () => {
 // ---- 4. generateAgent ----
 test('generateAgent returns a matching checksummed address + well-known', () => {
   const g = generateAgent(EVE);
-  assert.equal(privateKeyToAccount(g.privateKey).address, g.address);
+  assert.equal(privateKeyToAddress(g.privateKey), g.address);
   assert.match(g.address, /^0x[0-9a-fA-F]{40}$/);
   assert.notEqual(g.address, g.address.toLowerCase());        // EIP-55 mixed-case
   assert.deepEqual(g.wellKnown, { v: 1, keys: [g.address] });
@@ -64,6 +68,11 @@ test('sign produces the full envelope', async () => {
   assert.equal(s.signer, s.agent_id);
   assert.equal(s.scope, '');
   assert.equal(s.v, 1);
+});
+
+test('sign caps ttl at SKEW (longer exp cannot outlive the skew check anyway)', async () => {
+  const s = await sign({ x: 1 }, { ...signOpts, ttl: 9999 });
+  assert.equal(s.exp, s.ts + SKEW);
 });
 
 // ---- 6. httpsResolver SSRF guard + cached ----
@@ -91,7 +100,7 @@ test('httpsResolver reads keys on 200, empty on non-200; cached hits once', asyn
   } finally { globalThis.fetch = orig; }
 });
 
-// ---- regression: SSRF guard catches shorthand / octal / userinfo IPv4 (§8 #1) ----
+// ---- regression: SSRF guard catches shorthand / octal / userinfo IPv4 ----
 test('httpsResolver rejects non-canonical IPv4 + userinfo bypasses', async () => {
   for (const bad of ['127.1', '10.1', '0177.0.0.1', '0x7f.0.0.1', '192.168.1',
                      '2130706433', 'user@127.0.0.1', 'a.com?x=1', 'a.com#f']) {
@@ -157,7 +166,7 @@ test('verify rejects a spliced (wrong) signature', async () => {
   assert.equal(r.reason, 'signer mismatch');
 });
 
-// ---- regression: verify RETURNS {ok:false}, never throws, on hostile input (§8 #2) ----
+// ---- regression: verify RETURNS {ok:false}, never throws, on hostile input ----
 test('verify never throws on malformed envelopes', async () => {
   const { s, ok } = await baseline();
   const bad: [string, any][] = [
@@ -177,11 +186,19 @@ test('verify never throws on malformed envelopes', async () => {
   }
 });
 
-// ---- regression: nonce retained across the whole freshness window under skew (§8 #5) ----
+// ---- regression: nonce retained across the whole freshness window under skew ----
+// sign() clamps ttl, but a forger doesn't — hand-craft a long-exp envelope directly.
 test('replay blocked even when receiver clock trails the sender', async () => {
-  const s = await sign({ x: 1 }, { ...signOpts, ttl: 1000 });   // exp = ts + 1000 > ts + SKEW
+  const addr = privateKeyToAddress(signOpts.privateKey);
+  const ts = 1751371200;
+  const c = {
+    v: 1 as const, origin: EVE, signer: addr, agent_id: addr, scope: '', aud: BOB,
+    ts, exp: ts + 1000, nonce: '0x9f3c1a7be44d0521c0a8f2e6' as const,   // exp > ts + SKEW
+    payload_hash: payloadHash({ x: 1 }),
+  };
+  const s: Signed = { ...c, sig: signMessage('marque/v1\n' + canon(c), signOpts.privateKey), payload: { x: 1 } };
   const seen = new Map<string, number>();
-  const ctx = { selfOrigin: BOB, resolveKeys: only(s.signer), seen };
+  const ctx = { selfOrigin: BOB, resolveKeys: only(addr), seen };
   assert.equal((await verify(s, { ...ctx, now: s.ts })).ok, true);           // first receipt at ts
   const replay = await verify(s, { ...ctx, now: s.ts + SKEW });              // still fresh (exp>now)
   assert.equal(replay.reason, 'replay');        // pre-fix this pruned the nonce and returned ok:true
@@ -194,14 +211,14 @@ test('verify returns a lowercased, dot-stripped identity', async () => {
   assert.deepEqual(r, { ok: true, identity: 'https:eve.example.com', signer: s.signer });
 });
 
-// ---- regression: reserved scope must be empty in v1 (Codex #4) ----
+// ---- regression: reserved scope must be empty in v1 ----
 test('verify rejects a non-empty scope', async () => {
   const s = await sign({ x: 1 }, signOpts);
   const r = await verify({ ...s, scope: 'admin' }, { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map(), now: s.ts });
   assert.equal(r.reason, 'scope not supported');   // note: tampering scope also breaks the sig, but this check fires first
 });
 
-// ---- regression: concurrent copies of one envelope can't both pass (Codex #1) ----
+// ---- regression: concurrent copies of one envelope can't both pass ----
 test('concurrent replay: exactly one of two identical verifies succeeds', async () => {
   const s = await sign({ x: 1 }, signOpts);
   const ctx = { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map<string, number>(), now: s.ts };
@@ -219,12 +236,12 @@ test('round trip ok, cross-audience fails', async () => {
   assert.equal(bad.reason, 'wrong audience');
 });
 
-// ---- FROZEN TEST VECTOR (regression anchor, §9). ----
+// ---- FROZEN TEST VECTOR (regression anchor). ----
 // Fixed {privateKey, payload, ts, exp, nonce} -> exact {payload_hash, signingString, sig, address}.
 // A refactor that changes any signed byte must break this test.
 test('frozen vector byte-compatibility', () => {
   const pk = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const;
-  const acct = privateKeyToAccount(pk);
+  const address = privateKeyToAddress(pk);
   const payload = { task: 'summarize', url: 'https://x.com/thread/1' };
 
   const V = {
@@ -235,16 +252,18 @@ test('frozen vector byte-compatibility', () => {
     sig: '0xb0b1d272bd1ab5d5902136ffd96e996f57331bf9837a117a9438cdf2bbdcf9925241b1f39ff4450496055222c2ad707f0f5ae0aa02fffc4871fe6d85bea940a41b',
   };
 
-  assert.equal(acct.address, V.address);
-  assert.equal(keccak256(stringToBytes(canon(payload))), V.payload_hash);
+  assert.equal(address, V.address);
+  assert.equal(payloadHash(payload), V.payload_hash);
 
   const c = {
-    v: 1 as const, origin: EVE, signer: acct.address, agent_id: acct.address,
+    v: 1 as const, origin: EVE, signer: address, agent_id: address,
     scope: '', aud: BOB, ts: 1751371200, exp: 1751371500,
     nonce: '0x9f3c1a7be44d0521c0a8f2e6' as `0x${string}`,
     payload_hash: V.payload_hash as `0x${string}`,
   };
   assert.equal('marque/v1\n' + canon(c), V.signingString);
+  // Deterministic RFC 6979 signing must reproduce the frozen (viem-era) signature bit-for-bit.
+  assert.equal(signMessage(V.signingString, pk), V.sig);
 });
 
 // verify() accepts a hand-built envelope carrying the frozen signature.

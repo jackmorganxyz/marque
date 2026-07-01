@@ -4,12 +4,19 @@ Let one AI agent **sign** an outbound message with its own secp256k1 wallet key,
 
 Trust is anchored in infrastructure the verifier already trusts: the sender publishes its wallet address at a static file on its *own* origin — `https://<origin>/.well-known/marque.json`, served over TLS — and the verifier reads the key straight from there. `verify()` returns an origin-level identity string like `https:eve.example.com`.
 
-- **No blockchain, no contracts, no RPC, no gas.** The wallet is a standard Ethereum key (via `viem`), used purely as an identity anchor. Marque never touches a chain.
+- **No blockchain, no contracts, no RPC, no gas.** The wallet is a standard Ethereum key, used purely as an identity anchor. Marque never touches a chain.
 - **No billing, no API keys.** The only secret an agent holds is its own signing private key.
 - **No server, no registry, no third-party attestor.** The sender's own origin (TLS) *is* the registry; `verify()` runs inline in the receiver's inbound handler.
+- **Two tiny audited deps.** `@noble/curves` + `@noble/hashes` — the primitives viem and ethers themselves build on. Signatures are byte-identical standard EIP-191, so any Ethereum tooling can verify them.
 
 ```
 npm i marque
+```
+
+See the whole protocol run locally — sign, verify, then watch tampering, replay, mis-forwarding, and impersonation get rejected (no network, nothing deployed):
+
+```
+npx marque demo
 ```
 
 ---
@@ -31,10 +38,13 @@ await fetch("https://bob.example.com/api/inbox", {
 });
 
 // Receiver (Bob @ bob.example.com):
+const seen = new Map<string, number>();  // replay guard — per-process; use a shared store in prod
 const r = await verify(envelope, { selfOrigin: "bob.example.com", seen });
 // r == { ok: true, identity: "https:eve.example.com", signer: "0x…" }
 if (r.ok && myAllowlist.has(r.identity)) act(envelope.payload, r.identity);
 ```
+
+`identity` is a namespaced label, not a URL — `https:` (no slashes) marks it as TLS-anchored, so future lower-assurance backends (`dns:…`, `x:…`) can never collide with it in an allowlist. `verify` returns a discriminated union: inside `if (r.ok)`, TypeScript knows `identity` and `signer` are present.
 
 ### Setup (once, by the sender's operator)
 
@@ -57,11 +67,12 @@ Prints `MARQUE_PRIVATE_KEY` (secret — never commit), `MARQUE_ADDRESS`, `MARQUE
 | export | signature | notes |
 |---|---|---|
 | `generateAgent(origin)` | `→ { privateKey, address, origin, wellKnown }` | new keypair + ready-to-serve well-known object. |
-| `sign(payload, opts)` | `opts: { privateKey, origin, aud, ttl? }` → `Promise<Signed>` | signs a domain-separated, audience-bound envelope; `ttl` defaults to 300s. |
+| `sign(payload, opts)` | `opts: { privateKey, origin, aud, ttl? }` → `Promise<Signed>` | signs a domain-separated, audience-bound envelope; `ttl` (seconds) defaults to — and is capped at — 300, since `verify`'s clock-skew check bounds freshness at 300s regardless. |
 | `verify(msg, ctx)` | `ctx: { selfOrigin, seen?, resolveKeys?, now? }` → `Promise<VerifyResult>` | runs all local checks, then resolves keys from the origin. **Total function** — always resolves to `{ ok, reason }` and never throws on hostile input; act only on `{ ok: true }`. |
 | `httpsResolver` | `ResolveKeys` | default resolver: HTTPS `.well-known` only, with SSRF guard. |
 | `cached(resolver, ttlMs?)` | `→ ResolveKeys` | wraps a resolver with a short (default 60s) verify-side cache. |
 | `ResolveKeys` | `(origin: string) => Promise<Address[]>` | swap this to back identity with DNS / on-chain / X-bio. |
+| `payloadHash(p)`, `canon(v)` | `→ Hex`, `→ string` | the exact hash/canonical form Marque signs — for interop implementations and tests. |
 
 For **offline unit tests**, pass `resolveKeys: async () => [expectedAddress]` — no network.
 
@@ -137,20 +148,20 @@ export const withMarque = (selfOrigin: string, handler: any) => async (req: any,
 };
 ```
 
-**Well-known route** (Next.js App Router — the address, never the private key):
+**Well-known route** (Next.js App Router — the address, never the private key; full version in [`examples/app/.well-known/marque.json/route.ts`](examples/app/.well-known/marque.json/route.ts)):
 
 ```ts
 // app/.well-known/marque.json/route.ts
-export const dynamic = "force-static";
+// MARQUE_ADDRESS may hold several comma-separated addresses (rotation overlap).
+// force-dynamic: read per request, so an env change needs no rebuild.
+export const dynamic = "force-dynamic";
 export function GET() {
-  return Response.json(
-    { v: 1, keys: [process.env.MARQUE_ADDRESS!] },
-    { headers: { "cache-control": "public, max-age=300" } },
-  );
+  const keys = (process.env.MARQUE_ADDRESS ?? "").split(",").map(s => s.trim()).filter(Boolean);
+  return Response.json({ v: 1, keys }, { headers: { "cache-control": "public, max-age=300" } });
 }
 ```
 
-Serve it from a route not subject to shared/edge cache-key confusion; short `max-age` bounds revocation latency. For a static host, drop a literal `public/.well-known/marque.json`.
+Serve it from a route not subject to shared/edge cache-key confusion; short `max-age` bounds revocation latency. For a static host, drop a literal `public/.well-known/marque.json` instead.
 
 ---
 
