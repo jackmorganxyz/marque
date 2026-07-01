@@ -171,84 +171,11 @@ Serve it from a route not subject to shared/edge cache-key confusion; short `max
 
 ## Drop-in for a Vercel `eve` agent
 
-Marque's core does not depend on `eve` — these four files are the whole adapter, and they are all the agent author writes. Targets Vercel's [`eve`](https://vercel.com/eve) framework (agent + Next.js share one origin via `withEve()`).
+Three files, three env vars, one line of agent instructions — the complete adapter is documented in **[docs/eve.md](docs/eve.md)**, written so you can hand the file straight to an AI coding agent and get a correct integration: exact file contents, verification commands, a failure-mode table, and the hard security rules.
 
-**Env vars** (`.env.local` + `vercel env add <NAME> production`):
-
-| var | secret? | value | used by |
-|---|---|---|---|
-| `MARQUE_PRIVATE_KEY` | **yes** | `0x…` signing key | signing outbound |
-| `MARQUE_ADDRESS` | no | the key's `0x…` address (comma-separate several to overlap during rotation) | the well-known route |
-| `MARQUE_ORIGIN` | no | this agent's origin, e.g. `eve.example.com` | `origin` when signing, `selfOrigin` when verifying |
-
-**1 — Bootstrap the key.** `npx marque init eve.example.com` prints all three env vars + the well-known JSON. Never commit `MARQUE_PRIVATE_KEY`.
-
-**2 — Publish identity.** Use the well-known route above (it reads `MARQUE_ADDRESS`).
-
-**3 — Sign outbound** — `agent/tools/send-signed-message.ts` (filename = tool name):
-
-```ts
-import { defineTool } from "eve/tools";
-import { z } from "zod";
-import { sign } from "marque";
-
-export default defineTool({
-  description: "Send a message to another agent, signed so they can verify it came from us.",
-  inputSchema: z.object({
-    url: z.string().url(),   // recipient's inbox endpoint
-    toOrigin: z.string(),    // recipient's origin, e.g. bob.example.com
-    payload: z.any(),        // the message
-  }),
-  async execute({ url, toOrigin, payload }) {
-    const signed = await sign(payload, {
-      privateKey: process.env.MARQUE_PRIVATE_KEY as `0x${string}`,
-      origin: process.env.MARQUE_ORIGIN!,   // us
-      aud: toOrigin,                        // them — audience binding
-    });
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(signed),
-    });
-    return { delivered: res.ok, status: res.status };
-  },
-});
-```
-
-**4 — Verify inbound** — `app/api/inbox/route.ts` (rejects forgeries before the agent sees them):
-
-```ts
-import { verify } from "marque";
-
-// ⚠ serverless = per-invocation memory. Use a SHARED nonce store (Vercel KV / Upstash)
-// in production, or accept 300s same-audience replay (see warnings).
-const seen = new Map<string, number>();
-
-export async function POST(req: Request) {
-  const msg = await req.json();
-  const r = await verify(msg, { selfOrigin: process.env.MARQUE_ORIGIN!, seen });
-  if (!r.ok) return Response.json({ error: "marque: " + r.reason }, { status: 401 });
-  // r.identity is e.g. "https:bob.example.com" — check YOUR allowlist before acting,
-  // then hand msg.payload + r.identity to the agent (enqueue an eve run, etc.).
-  return Response.json({ ok: true, from: r.identity });
-}
-```
-
-**Optional** — if a signed envelope arrives as data the model handles, expose verification as a tool too, `agent/tools/verify-message.ts`:
-
-```ts
-import { defineTool } from "eve/tools";
-import { z } from "zod";
-import { verify } from "marque";
-const seen = new Map<string, number>();
-export default defineTool({
-  description: "Verify a signed message and return which agent it came from.",
-  inputSchema: z.object({ message: z.any() }),
-  async execute({ message }) {
-    const r = await verify(message, { selfOrigin: process.env.MARQUE_ORIGIN!, seen });
-    return r.ok ? { verified: true, from: r.identity } : { verified: false, reason: r.reason };
-  },
-});
+```bash
+npx marque init eve.example.com   # key + env vars
+# then follow docs/eve.md: well-known route, send-signed-message tool, /api/inbox route
 ```
 
 ---
