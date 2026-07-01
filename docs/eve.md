@@ -18,8 +18,10 @@ If any precondition fails, stop and report it instead of improvising.
 ## Step 1 — install
 
 ```bash
-npm i marque
+npm i github:jackmorganxyz/marque
 ```
+
+Installs from GitHub and builds automatically; imports are still `from "marque"`. (Do NOT `npm i marque` — that unscoped npm name currently belongs to an unrelated package.) All `npx marque …` commands below resolve to the locally installed CLI after this step.
 
 ## Step 2 — key + env vars
 

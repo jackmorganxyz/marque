@@ -1,7 +1,6 @@
 # Marque
 
 [![CI](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml/badge.svg)](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/marque)](https://www.npmjs.com/package/marque)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Let one AI agent **sign** an outbound message with its own secp256k1 wallet key, and let a receiving agent **verify** which entity (which https origin) sent it — **with no shared secret**.
@@ -14,13 +13,15 @@ Trust is anchored in infrastructure the verifier already trusts: the sender publ
 - **Two tiny audited deps.** `@noble/curves` + `@noble/hashes` — the primitives viem and ethers themselves build on. Signatures are byte-identical standard EIP-191, so any Ethereum tooling can verify them.
 
 ```
-npm i marque
+npm i github:jackmorganxyz/marque
 ```
+
+Installs from GitHub (builds automatically); imports stay `from "marque"`. npm registry publish coming later.
 
 See the whole protocol run locally — sign, verify, then watch tampering, replay, mis-forwarding, and impersonation get rejected (no network, nothing deployed):
 
 ```
-npx marque demo
+npx github:jackmorganxyz/marque demo
 ```
 
 ---
@@ -53,7 +54,7 @@ if (r.ok && myAllowlist.has(r.identity)) act(envelope.payload, r.identity);
 ### Setup (once, by the sender's operator)
 
 ```bash
-npx marque init eve.example.com
+npx github:jackmorganxyz/marque init eve.example.com   # plain `npx marque init` once installed
 ```
 
 Prints `MARQUE_PRIVATE_KEY` (secret — never commit), `MARQUE_ADDRESS`, `MARQUE_ORIGIN`, and the well-known JSON. Store the private key in env; publish the address at `https://eve.example.com/.well-known/marque.json`:
@@ -174,7 +175,7 @@ Serve it from a route not subject to shared/edge cache-key confusion; short `max
 Three files, three env vars, one line of agent instructions — the complete adapter is documented in **[docs/eve.md](docs/eve.md)**, written so you can hand the file straight to an AI coding agent and get a correct integration: exact file contents, verification commands, a failure-mode table, and the hard security rules.
 
 ```bash
-npx marque init eve.example.com   # key + env vars
+npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
 # then follow docs/eve.md: well-known route, send-signed-message tool, /api/inbox route
 ```
 
