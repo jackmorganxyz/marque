@@ -33,7 +33,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test marque.test.ts",
     "marque": "tsx bin/marque.ts",
-    "prepublishOnly": "npm test && npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"
