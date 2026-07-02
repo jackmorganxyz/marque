@@ -91,7 +91,8 @@ export async function sign(
 // ---- Identity resolution (injectable). Default: HTTPS .well-known only. ----
 
 // SSRF guard (red-team must-fix): origin must be a public https hostname.
-function assertPublicHost(origin: string): void {
+// Exported for reuse by optional modules (x.ts) — not part of the documented API.
+export function assertPublicHost(origin: string): void {
   // no scheme/port/path/userinfo/query/fragment/whitespace (IPv6 has colons → also rejected here)
   if (origin === '' || /[:/\\@?#\s]/.test(origin)) throw new Error('marque: bad origin');
   let host: string;

@@ -19,6 +19,10 @@
     ".": {
       "types": "./dist/marque.d.ts",
       "import": "./dist/marque.js"
+    },
+    "./x": {
+      "types": "./dist/x.d.ts",
+      "import": "./dist/x.js"
     }
   },
   "bin": {
@@ -29,9 +33,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && rm -f dist/marque.test.*",
+    "build": "tsc && rm -f dist/*.test.*",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test marque.test.ts",
+    "test": "node --import tsx --test marque.test.ts x.test.ts",
     "marque": "tsx bin/marque.ts",
     "prepare": "npm run build",
     "prepublishOnly": "npm test"

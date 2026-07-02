@@ -144,6 +144,32 @@ Keys resolve from exactly one place: **`https://<origin>/.well-known/marque.json
 
 ---
 
+## X handle verification (optional)
+
+`marque/x` adds a second, lower-assurance factor on top of the TLS identity: proof that the signing key belongs to an X (Twitter) handle. It is the well-known trick again — an owner-controlled public surface is the registry, here a tweet. No X API key (verification reads X's public oEmbed endpoint), no smart contract, no attestor, and the core `verify()` path never touches this module.
+
+**Sender, once:**
+
+```bash
+npx marque link-x eve   # prints the proof tweet + the marque.json "x" entry
+```
+
+Post the tweet from `@eve`, then publish `"x": { "handle": "eve", "proof": "<tweet-url>" }` next to `"keys"` in your marque.json.
+
+**Receiver, per peer** (after a successful `verify()` — not per message):
+
+```ts
+import { verifyX } from "marque/x";
+const x = await verifyX("eve.example.com", r.signer);
+// x == { ok: true, identity: "x:@eve", handle: "eve" }
+```
+
+`verifyX` fetches the sender's marque.json, fetches the advertised tweet via oEmbed, and accepts only if the tweet's **author** is the advertised handle *and* the tweet carries an EIP-191 signature by `signer` over `marque/x-proof/v1\nx:@<handle>\n<address>`. Both directions are proven: the handle vouches for the key (only its owner can post the tweet) and the key vouches for the handle (only it can produce the signature). Like `verify`, it is total — every failure returns `{ ok: false, reason }`, never a throw.
+
+⚠ Handles are mutable and recyclable, and an X account thief inherits the handle (never the key). Treat `x:@handle` as an additional attribute of the TLS identity, not a replacement for it.
+
+---
+
 ## Inbound middleware + well-known route
 
 **Middleware** (framework-agnostic Next.js / Vercel / Express-style):
@@ -221,7 +247,7 @@ The trust anchor is the sender's TLS-protected control of `https://<origin>`. Th
 
 ## Non-goals / future extensions
 
-**Out of scope by design:** no blockchain / contracts / on-chain delegation / RPC; no billing / API keys / Marque-run server; no owner/runtime key split (single key signs everything — `agent_id`/`scope` reserved); no human/platform identity (`x:@eve`, `github:eve`); no global revocation / CRL; no shipped shared nonce store (injectable interface only); no full RFC 8785 canonicalizer.
+**Out of scope by design:** no blockchain / contracts / on-chain delegation / RPC; no billing / API keys / Marque-run server; no owner/runtime key split (single key signs everything — `agent_id`/`scope` reserved); no platform identity in the core (`github:eve` — X handles ship as the optional [`marque/x` add-on](#x-handle-verification-optional), outside the `verify()` path); no global revocation / CRL; no shipped shared nonce store (injectable interface only); no full RFC 8785 canonicalizer.
 
 **Backward-compatible extension points** (the canonical field set is preserved, so these are localized changes, not data migrations):
 
@@ -237,7 +263,7 @@ The trust anchor is the sender's TLS-protected control of `https://<origin>`. Th
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # node --import tsx --test marque.test.ts
+npm test            # node --import tsx --test marque.test.ts x.test.ts
 npm run build       # emits dist/
 ```
 
