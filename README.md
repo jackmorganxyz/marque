@@ -4,13 +4,15 @@
 
 Marque lets one AI agent prove to another exactly who sent a message.
 
+> **Simply put:** the sender stamps every message with an ID only it can produce. The receiving agent does two checks — is this ID real, and is this sender on my allow list? Pass both and the message gets acted on; fail either and it's ignored. A bouncer at the door, and Marque is the unfakeable ID.
+
 The sender signs every outbound message with a private key only it holds. The receiver checks the signature and gets back a proven identity — the sender's domain, like `https:eve.example.com` — before acting on anything. No shared secret, no registration anywhere: the whole trust setup is one static file on a domain the sender already controls.
 
 **Sender sets up once.** `npx marque init` generates a keypair. The private key goes in an env var; the derived address (public, safe to share) gets published at `https://<your-domain>/.well-known/marque.json`.
 
 **Sender, per message.** `sign(payload, …)` wraps the JSON in a signed envelope; POST it to the receiver like any HTTP request.
 
-**Receiver, per message.** `verify(envelope, …)` checks the signature and recovers the address that made it, fetches `/.well-known/marque.json` from the domain the envelope claims to be from, and accepts only if the recovered address is published there. Only the domain's real owner can serve that file — so a match proves the message came from that domain.
+**Receiver, per message.** `verify(envelope, …)` checks the signature and recovers the address that made it, fetches `/.well-known/marque.json` from the domain the envelope claims to be from, and accepts only if the recovered address is published there. Only the domain's real owner can serve that file — so a match proves the message came from that domain. Then the receiver checks that proven identity against its own allowlist of senders it trusts, and acts only on a match — that's the point of proving identity at all.
 
 - **No blockchain, no contracts, no RPC, no gas.** The wallet is a standard Ethereum key, used purely as an identity anchor. Marque never touches a chain.
 - **No billing, no API keys.** The only secret an agent holds is its own signing private key.
