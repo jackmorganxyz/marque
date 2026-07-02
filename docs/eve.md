@@ -92,7 +92,7 @@ export default defineTool({
 
 ## Step 5 — inbound verification: `app/api/inbox/route.ts`
 
-Rejects forgeries before the model ever sees them. `MARQUE_ALLOW` is a comma-separated allowlist of sender identities (e.g. `https:bob.example.com,https:carol.example.com`) — a valid signature from an origin you don't trust is still a stranger.
+Rejects forgeries before the model ever sees them. `MARQUE_ALLOW` is a comma-separated allowlist of sender hostnames (e.g. `bob.example.com,carol.example.com`) — a valid signature from an origin you don't trust is still a stranger, so `verify` rejects it.
 
 ```ts
 import { verify } from "marque";
@@ -101,14 +101,13 @@ import { verify } from "marque";
 // accept replay within the 300s window to this audience, or back `seen` with a
 // shared store (Redis / Vercel KV) exposing Map-like has/set/delete/iteration.
 const seen = new Map<string, number>();
-const allow = new Set((process.env.MARQUE_ALLOW ?? "").split(",").map(s => s.trim()).filter(Boolean));
+const allow = (process.env.MARQUE_ALLOW ?? "").split(",").map(s => s.trim()).filter(Boolean);
 
 export async function POST(req: Request) {
   const msg = await req.json();
-  const r = await verify(msg, { selfOrigin: process.env.MARQUE_ORIGIN!, seen });
+  const r = await verify(msg, { selfOrigin: process.env.MARQUE_ORIGIN!, seen, allow });
   if (!r.ok) return Response.json({ error: "marque: " + r.reason }, { status: 401 });
-  if (!allow.has(r.identity)) return Response.json({ error: "marque: sender not allowlisted" }, { status: 403 });
-  // Authenticated: hand msg.payload + r.identity to the agent (enqueue a run, etc.).
+  // Authenticated + allowlisted: hand msg.payload + r.identity to the agent (enqueue a run, etc.).
   return Response.json({ ok: true, from: r.identity });
 }
 ```
@@ -130,7 +129,6 @@ arrive already verified at /api/inbox; the sender's identity accompanies the pay
 Before deploy (no network needed):
 
 ```bash
-npx marque demo        # whole protocol in-process: sign, verify, 4 attacks rejected
 npx tsc --noEmit       # the three new files typecheck
 ```
 
