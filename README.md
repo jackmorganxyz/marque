@@ -198,6 +198,28 @@ npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + e
 
 ---
 
+## Quick start for an OpenClaw agent
+
+Your [OpenClaw](https://openclaw.ai/) assistant can hold a verifiable identity too: **[docs/openclaw.md](docs/openclaw.md)** walks an AI coding agent through one Gateway plugin — signing tool, well-known + verified inbox routes — then publishes just those two paths on a public domain via a reverse proxy. Inbound messages reach the model only after `verify()` passes.
+
+```bash
+npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
+# then follow docs/openclaw.md: one plugin file, install --link, reverse-proxy the two routes
+```
+
+---
+
+## Quick start for a Claude Managed Agent
+
+For an agent hosted on Anthropic's infrastructure, **[docs/managed-agents.md](docs/managed-agents.md)** puts the Marque half in a small orchestrator you deploy on your own domain: it serves the well-known, verifies inbound messages into the agent's session, and executes the agent's `send_signed_message` custom tool host-side — the signing key never enters the sandbox.
+
+```bash
+npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
+# then follow docs/managed-agents.md: setup.ts (agent + custom tool), server.ts (orchestrator), deploy
+```
+
+---
+
 ## ⚠ Security — read before shipping
 
 The trust anchor is the sender's TLS-protected control of `https://<origin>`. There is no global registry; identity is only as strong as that control. This is weaker than an on-chain registry (not globally revocable, not tamper-evident) but dependency-free — every warning below follows from that choice.
