@@ -51,7 +51,7 @@ test('sign rejects unsafe numbers, accepts safe payloads', async () => {
 
 // ---- 4. generateAgent ----
 test('generateAgent returns a matching checksummed address + well-known', () => {
-  const g = generateAgent(EVE);
+  const g = generateAgent();
   assert.equal(privateKeyToAddress(g.privateKey), g.address);
   assert.match(g.address, /^0x[0-9a-fA-F]{40}$/);
   assert.notEqual(g.address, g.address.toLowerCase());        // EIP-55 mixed-case
@@ -225,6 +225,16 @@ test('concurrent replay: exactly one of two identical verifies succeeds', async 
   const [a, b] = await Promise.all([verify(s, ctx), verify(s, ctx)]);
   assert.equal([a, b].filter(r => r.ok).length, 1);
   assert.equal([a, b].find(r => !r.ok)!.reason, 'replay');
+});
+
+// ---- allow: built-in sender allowlist ----
+test('allow accepts listed senders (bare or prefixed), rejects strangers', async () => {
+  const { s, ok } = await baseline();
+  assert.equal((await verify(s, { ...ok, allow: ['https:eve.example.com'] })).ok, true);
+  const ok2 = { ...ok, seen: new Map<string, number>() };            // fresh nonce store
+  assert.equal((await verify(s, { ...ok2, allow: ['EVE.Example.com.'] })).ok, true);  // bare + case + dot
+  const r = await verify(s, { ...ok, allow: ['carol.example.com'] });
+  assert.equal(r.reason, 'sender not allowed');
 });
 
 // ---- round trip: sign -> verify across both functions ----

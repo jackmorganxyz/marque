@@ -7,7 +7,7 @@
 // SECURITY: read the warnings in README.md before using. In particular:
 //   - use a DEDICATED signing key (never reuse for SIWE / wallet-connect),
 //   - supply a SHARED nonce store in multi-instance deployments,
-//   - act ONLY on { ok: true } and check identity against your allowlist.
+//   - act ONLY on { ok: true } and allowlist senders (ctx.allow, or check identity yourself).
 import {
   generatePrivateKey, privateKeyToAddress, signMessage, recoverMessageAddress,
   keccak256, isAddressEqual, randomHex, type Hex, type Address,
@@ -63,10 +63,10 @@ function assertJsonSafe(v: any): void {
 export const payloadHash = (p: unknown): Hex => keccak256(canon(p));
 const core = (c: Core): string => DOMAIN + canon(c);
 
-export function generateAgent(origin: string) {
+export function generateAgent() {
   const privateKey = generatePrivateKey();
   const address = privateKeyToAddress(privateKey);
-  return { privateKey, address, origin,
+  return { privateKey, address,
     wellKnown: { v: 1, keys: [address] } };   // serve at /.well-known/marque.json
 }
 
@@ -160,6 +160,7 @@ export async function verify(
     selfOrigin: string;                 // this verifier's own origin — checked against aud
     seen?: Map<string, number>;         // nonce -> expiry epoch s (injectable shared store)
     resolveKeys?: ResolveKeys;          // default: cached(httpsResolver)
+    allow?: readonly string[];          // sender identities to accept; omitted = caller checks
     now?: number;
   },
 ): Promise<VerifyResult> {
@@ -180,6 +181,14 @@ export async function verify(
     return { ok: false, reason: 'malformed envelope' };
   if (c.scope !== '') return { ok: false, reason: 'scope not supported' };   // reserved slot; must be empty in v1
   if (c.aud !== ctx.selfOrigin) return { ok: false, reason: 'wrong audience' };
+  // identity is derived solely from the signed origin field, so an allowlist miss on
+  // the CLAIMED origin is final — checking before crypto/fetch spends nothing on strangers.
+  const identity = `https:${c.origin.replace(/\.$/, '').toLowerCase()}`;
+  // entries: "https:bob.example.com" or bare "bob.example.com" (https: implied in v1)
+  if (ctx.allow && !ctx.allow.some(a => {
+    const s = a.toLowerCase().replace(/\.$/, '');
+    return (s.includes(':') ? s : 'https:' + s) === identity;
+  })) return { ok: false, reason: 'sender not allowed' };
   if (!(c.exp > now)) return { ok: false, reason: 'expired' };
   if (Math.abs(now - c.ts) > SKEW) return { ok: false, reason: 'clock skew' };
   if (seen) {
@@ -213,10 +222,10 @@ export async function verify(
     seen?.delete(c.nonce);                                    // release so a real retry isn't burned
     return { ok: false, reason: 'key not published at origin' };
   }
-  // Canonicalize the identity label (case-insensitive host, trailing dot = same host)
+  // identity was canonicalized above (case-insensitive host, trailing dot = same host)
   // so an exact-string allowlist can't be split by casing. Percent/IDN normalization
   // + homograph checks remain the caller's job (README #3). The "https:" prefix (no
   // slashes — it's a label, not a URL) namespaces the assurance backend, so no
   // future lower-assurance backend's identities can collide with TLS-anchored ones.
-  return { ok: true, identity: `https:${c.origin.replace(/\.$/, '').toLowerCase()}`, signer: recovered };
+  return { ok: true, identity, signer: recovered };
 }

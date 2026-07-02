@@ -1,6 +1,5 @@
 # Marque
 
-[![CI](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml/badge.svg)](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Marque lets one AI agent prove to another exactly who sent a message.
@@ -24,10 +23,19 @@ npm i github:jackmorganxyz/marque
 
 Installs from GitHub (builds automatically); imports stay `from "marque"`. npm registry publish coming later.
 
-See the whole protocol run locally — sign, verify, then watch tampering, replay, mis-forwarding, and impersonation get rejected (no network, nothing deployed):
+The whole protocol at a glance — Eve signs, Bob verifies, and four attacks bounce:
 
 ```
-npx github:jackmorganxyz/marque demo
+eve.example.com ──── signed envelope ────▶ bob.example.com
+                 sig · nonce · aud            verify()
+
+  ✓ genuine envelope from Eve      accepted   identity https:eve.example.com
+  ✗ payload tampered in transit    rejected   signature mismatch
+  ✗ same envelope replayed         rejected   nonce already seen
+  ✗ forwarded to carol             rejected   wrong audience
+  ✗ Mallory claims Eve's origin    rejected   key not at eve's well-known
+
+  bob fetches eve's key from https://eve.example.com/.well-known/marque.json
 ```
 
 ---
@@ -50,9 +58,12 @@ await fetch("https://bob.example.com/api/inbox", {
 
 // Receiver (Bob @ bob.example.com):
 const seen = new Map<string, number>();  // replay guard — per-process; use a shared store in prod
-const r = await verify(envelope, { selfOrigin: "bob.example.com", seen });
+const r = await verify(envelope, {
+  selfOrigin: "bob.example.com", seen,
+  allow: ["eve.example.com"],            // senders you trust — a valid signature from a stranger still fails
+});
 // r == { ok: true, identity: "https:eve.example.com", signer: "0x…" }
-if (r.ok && myAllowlist.has(r.identity)) act(envelope.payload, r.identity);
+if (r.ok) act(envelope.payload, r.identity);
 ```
 
 `identity` is a namespaced label, not a URL — `https:` (no slashes) marks it as TLS-anchored, so no future lower-assurance backend could ever collide with it in an allowlist. `verify` returns a discriminated union: inside `if (r.ok)`, TypeScript knows `identity` and `signer` are present.
@@ -77,9 +88,9 @@ Prints `MARQUE_PRIVATE_KEY` (secret — never commit), `MARQUE_ADDRESS`, `MARQUE
 
 | export | signature | notes |
 |---|---|---|
-| `generateAgent(origin)` | `→ { privateKey, address, origin, wellKnown }` | new keypair + ready-to-serve well-known object. |
+| `generateAgent()` | `→ { privateKey, address, wellKnown }` | new keypair + ready-to-serve well-known object. |
 | `sign(payload, opts)` | `opts: { privateKey, origin, aud, ttl? }` → `Promise<Signed>` | signs a domain-separated, audience-bound envelope; `ttl` (seconds) defaults to — and is capped at — 300, since `verify`'s clock-skew check bounds freshness at 300s regardless. |
-| `verify(msg, ctx)` | `ctx: { selfOrigin, seen?, resolveKeys?, now? }` → `Promise<VerifyResult>` | runs all local checks, then resolves keys from the origin. **Total function** — always resolves to `{ ok, reason }` and never throws on hostile input; act only on `{ ok: true }`. |
+| `verify(msg, ctx)` | `ctx: { selfOrigin, seen?, allow?, resolveKeys?, now? }` → `Promise<VerifyResult>` | runs all local checks, then resolves keys from the origin. `allow`: sender identities to accept — bare hostnames or `https:`-prefixed labels; omit it to check identities yourself. **Total function** — always resolves to `{ ok, reason }` and never throws on hostile input; act only on `{ ok: true }`. |
 | `httpsResolver` | `ResolveKeys` | default resolver: HTTPS `.well-known` only, with SSRF guard. |
 | `cached(resolver, ttlMs?)` | `→ ResolveKeys` | wraps a resolver with a short (default 60s) verify-side cache. |
 | `ResolveKeys` | `(origin: string) => Promise<Address[]>` | swap this to back identity with an on-chain registry or your own key store. |
@@ -143,7 +154,7 @@ export const withMarque = (selfOrigin: string, handler: any) => async (req: any,
 };
 ```
 
-**Well-known route** (Next.js App Router — the address, never the private key; full version in [`examples/app/.well-known/marque.json/route.ts`](examples/app/.well-known/marque.json/route.ts)):
+**Well-known route** (Next.js App Router — the address, never the private key; walkthrough in [`docs/eve.md`](docs/eve.md)):
 
 ```ts
 // app/.well-known/marque.json/route.ts
