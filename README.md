@@ -173,13 +173,13 @@ Serve it from a route not subject to shared/edge cache-key confusion; short `max
 
 ---
 
-## Drop-in for a Vercel `eve` agent
+## Quick start for a Vercel `eve` agent
 
-Three files, three env vars, one line of agent instructions — the complete adapter is documented in **[docs/eve.md](docs/eve.md)**, written so you can hand the file straight to an AI coding agent and get a correct integration: exact file contents, verification commands, a failure-mode table, and the hard security rules.
+Hand **[docs/eve.md](docs/eve.md)** straight to an AI coding agent and it goes from an empty directory to a **deployed** eve agent that signs outbound messages and verifies inbound ones against an allowlist: scaffold, keys, the three integration files, operator customization, Vercel deploy — plus verification commands, a failure-mode table, and the hard security rules.
 
 ```bash
 npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
-# then follow docs/eve.md: well-known route, send-signed-message tool, /api/inbox route
+# then follow docs/eve.md: well-known route, send-signed-message tool, /api/inbox, deploy
 ```
 
 ---
