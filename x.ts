@@ -17,7 +17,7 @@ import {
   privateKeyToAddress, signMessage, recoverMessageAddress, isAddressEqual,
   type Hex, type Address,
 } from './eth.js';
-import { assertPublicHost } from './marque.js';
+import { assertPublicHost, boundedJson } from './net.js';
 
 const X_DOMAIN = 'marque/x-proof/v1\n';                 // domain separator, like core's marque/v1
 const OEMBED = 'https://publish.twitter.com/oembed';    // official, keyless, host is pinned here
@@ -42,55 +42,47 @@ export function linkX(handle: string, privateKey: Hex) {
   const address = privateKeyToAddress(privateKey);
   const sig = signMessage(xProofStatement(h, address), privateKey);
   return {
-    handle: h, address,
     tweet: `Verifying my marque agent ${address} sig:${sig}`,
     x: { handle: h, proof: `https://x.com/${h}/status/<tweet-id>` },
   };
 }
 
 // Discriminated union, same shape contract as core VerifyResult.
+// The identity label is derivable as `x:@${handle}` — one field, no invariant.
 export type XVerifyResult =
-  | { ok: true; identity: string; handle: string; reason?: undefined }
-  | { ok: false; reason: string; identity?: undefined; handle?: undefined };
-
-// Bounded JSON fetch mirroring httpsResolver's guards: 3s timeout, no redirect
-// follow, 64KB cap, null on any failure (fail closed).
-async function boundedJson(url: string): Promise<any> {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 3000);
-  try {
-    const r = await fetch(url, {
-      redirect: 'error', signal: ac.signal, headers: { accept: 'application/json' },
-    });
-    if (!r.ok) return null;
-    if (Number(r.headers.get('content-length')) > 64 * 1024) return null;
-    return JSON.parse((await r.text()).slice(0, 64 * 1024));
-  } catch { return null; }
-  finally { clearTimeout(t); }
-}
+  | { ok: true; handle: string; reason?: undefined }
+  | { ok: false; reason: string; handle?: undefined };
 
 /**
  * Verify that `signer` (the address `verify()` returned) belongs to the X handle
  * advertised at https://<origin>/.well-known/marque.json. Run it AFTER a
  * successful verify(), per peer — not per message. Total like verify(): every
  * failure returns { ok: false }, never a throw.
+ *
+ * fetchJson is injectable like core's resolveKeys — for offline tests, or to
+ * supply a cached layer (the default refetches marque.json, since the core
+ * resolver keeps only `keys`).
  */
-export async function verifyX(origin: string, signer: Address): Promise<XVerifyResult> {
+export async function verifyX(
+  origin: string, signer: Address,
+  opts: { fetchJson?: (url: string) => Promise<any> } = {},
+): Promise<XVerifyResult> {
+  const fetchJson = opts.fetchJson ?? boundedJson;
   try { assertPublicHost(origin); } catch { return { ok: false, reason: 'bad origin' }; }
-  // ponytail: refetches marque.json (the core resolver keeps only `keys`); wrap in a
-  // cached()-style layer like marque.ts's defaultResolver if this ever runs hot.
-  const wk = await boundedJson(`https://${origin}/.well-known/marque.json`);
+  const wk = await fetchJson(`https://${origin}/.well-known/marque.json`);
   let handle: string;
   try { handle = normHandle(wk?.x?.handle); }
   catch { return { ok: false, reason: 'no x entry at origin' }; }
   let proof: URL;
   try { proof = new URL(String(wk?.x?.proof)); }
   catch { return { ok: false, reason: 'bad proof url' }; }
-  // Only a tweet URL ever reaches oEmbed; the fetched host itself is pinned above.
+  // Only a tweet permalink ever reaches oEmbed; the fetched host itself is pinned
+  // above. The path's handle segment is untrusted cosmetics (authorship truth is
+  // oEmbed's author_url below), so don't re-encode handle grammar here.
   if (proof.protocol !== 'https:' || !/^(www\.)?(x|twitter)\.com$/.test(proof.hostname) ||
-      !/^\/[A-Za-z0-9_]{1,15}\/status\/\d+$/.test(proof.pathname))
+      !/^\/[^/]+\/status\/\d+$/.test(proof.pathname))
     return { ok: false, reason: 'bad proof url' };
-  const o = await boundedJson(`${OEMBED}?url=${encodeURIComponent(proof.href)}&omit_script=1&dnt=1`);
+  const o = await fetchJson(`${OEMBED}?url=${encodeURIComponent(proof.href)}&omit_script=1&dnt=1`);
   if (!o) return { ok: false, reason: 'proof fetch failed' };
   // author_url comes from X's TLS response, not from the sender — it is the
   // authorship truth no matter whose handle appears in the proof URL path.
@@ -104,5 +96,5 @@ export async function verifyX(origin: string, signer: Address): Promise<XVerifyR
     if (!isAddressEqual(recoverMessageAddress(xProofStatement(handle, signer), m[1]), signer))
       return { ok: false, reason: 'proof signer mismatch' };
   } catch { return { ok: false, reason: 'bad proof signature' }; }
-  return { ok: true, identity: `x:@${handle}`, handle };
+  return { ok: true, handle };
 }

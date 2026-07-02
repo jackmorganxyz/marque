@@ -14,22 +14,13 @@ const wellKnown = (x: unknown) => ({ v: 1, keys: [ADDR], x });
 const oembed = (tweet: string, author = 'eve') =>
   ({ author_url: `https://twitter.com/${author}`, html: `<blockquote><p>${tweet}</p></blockquote>` });
 
-// Stub fetch to return the given JSON bodies in call order: [marque.json, oEmbed]
-// (same globalThis.fetch stubbing pattern as the httpsResolver tests).
-function stubFetch(bodies: any[]) {
-  const orig = globalThis.fetch;
-  let i = 0;
-  globalThis.fetch = (async () => ({
-    ok: true, headers: { get: () => null },
-    text: async () => JSON.stringify(bodies[i++]),
-  })) as any;
-  return () => { globalThis.fetch = orig; };
-}
+// Injectable fetchJson stub returning the given bodies in call order:
+// [marque.json, oEmbed] — mirrors core tests injecting resolveKeys.
+const seq = (...bodies: any[]) => { let i = 0; return async () => bodies[i++] ?? null; };
 
 test('linkX normalizes the handle and its tweet signature binds handle to address', () => {
   const l = linkX('@Eve', PK);
-  assert.equal(l.handle, 'eve');
-  assert.equal(l.address, ADDR);
+  assert.equal(l.x.handle, 'eve');
   const sig = /sig:(0x[0-9a-fA-F]{130})/.exec(l.tweet)![1];
   assert.equal(recoverMessageAddress(xProofStatement('eve', ADDR), sig), ADDR);
   assert.throws(() => linkX('way-too-long-handle!', PK), /bad x handle/);
@@ -46,35 +37,28 @@ test('frozen x-proof vector byte-compatibility', () => {
 
 test('verifyX happy path', async () => {
   const l = linkX('eve', PK);
-  const restore = stubFetch([wellKnown({ handle: 'eve', proof: PROOF }), oembed(l.tweet)]);
-  try {
-    assert.deepEqual(await verifyX(EVE, ADDR), { ok: true, identity: 'x:@eve', handle: 'eve' });
-  } finally { restore(); }
+  const fetchJson = seq(wellKnown({ handle: 'eve', proof: PROOF }), oembed(l.tweet));
+  assert.deepEqual(await verifyX(EVE, ADDR, { fetchJson }), { ok: true, handle: 'eve' });
 });
 
 test('verifyX rejects a tweet posted by someone else', async () => {
   const l = linkX('eve', PK);
-  const restore = stubFetch([wellKnown({ handle: 'eve', proof: PROOF }), oembed(l.tweet, 'mallory')]);
-  try {
-    assert.equal((await verifyX(EVE, ADDR)).reason, 'tweet author mismatch');
-  } finally { restore(); }
+  const fetchJson = seq(wellKnown({ handle: 'eve', proof: PROOF }), oembed(l.tweet, 'mallory'));
+  assert.equal((await verifyX(EVE, ADDR, { fetchJson })).reason, 'tweet author mismatch');
 });
 
 test('verifyX rejects a proof signed by a different key', async () => {
   const other = linkX('eve', generatePrivateKey());   // valid proof, wrong key
-  const restore = stubFetch([wellKnown({ handle: 'eve', proof: PROOF }), oembed(other.tweet)]);
-  try {
-    assert.equal((await verifyX(EVE, ADDR)).reason, 'proof signer mismatch');
-  } finally { restore(); }
+  const fetchJson = seq(wellKnown({ handle: 'eve', proof: PROOF }), oembed(other.tweet));
+  assert.equal((await verifyX(EVE, ADDR, { fetchJson })).reason, 'proof signer mismatch');
 });
 
 test('verifyX rejects non-tweet proof urls before fetching them', async () => {
   for (const bad of ['https://evil.com/eve/status/1', 'http://x.com/eve/status/1',
                      'https://x.com/eve/likes', 'https://x.com.evil.com/eve/status/1', 'junk']) {
-    const restore = stubFetch([wellKnown({ handle: 'eve', proof: bad })]);
-    try {
-      assert.equal((await verifyX(EVE, ADDR)).reason, 'bad proof url', `expected reject for ${bad}`);
-    } finally { restore(); }
+    const fetchJson = seq(wellKnown({ handle: 'eve', proof: bad }));
+    assert.equal((await verifyX(EVE, ADDR, { fetchJson })).reason, 'bad proof url',
+      `expected reject for ${bad}`);
   }
 });
 
@@ -87,12 +71,9 @@ test('verifyX returns {ok:false}, never throws, on hostile or missing input', as
     [null, 'no x entry at origin'],                       // well-known fetch failed
   ];
   for (const [wk, reason] of cases) {
-    const restore = stubFetch([wk]);
-    try { assert.equal((await verifyX(EVE, ADDR)).reason, reason); }
-    finally { restore(); }
+    assert.equal((await verifyX(EVE, ADDR, { fetchJson: seq(wk) })).reason, reason);
   }
   // oEmbed body with no signature in the tweet text
-  const restore = stubFetch([wellKnown({ handle: 'eve', proof: PROOF }), oembed('gm')]);
-  try { assert.equal((await verifyX(EVE, ADDR)).reason, 'no signature in tweet'); }
-  finally { restore(); }
+  const fetchJson = seq(wellKnown({ handle: 'eve', proof: PROOF }), oembed('gm'));
+  assert.equal((await verifyX(EVE, ADDR, { fetchJson })).reason, 'no signature in tweet');
 });

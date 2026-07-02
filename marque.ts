@@ -12,7 +12,7 @@ import {
   generatePrivateKey, privateKeyToAddress, signMessage, recoverMessageAddress,
   keccak256, isAddressEqual, randomHex, type Hex, type Address,
 } from './eth.js';
-import { isIP } from 'node:net';
+import { assertPublicHost, boundedJson } from './net.js';
 
 export type { Hex, Address };
 
@@ -90,42 +90,13 @@ export async function sign(
 
 // ---- Identity resolution (injectable). Default: HTTPS .well-known only. ----
 
-// SSRF guard (red-team must-fix): origin must be a public https hostname.
-// Exported for reuse by optional modules (x.ts) — not part of the documented API.
-export function assertPublicHost(origin: string): void {
-  // no scheme/port/path/userinfo/query/fragment/whitespace (IPv6 has colons → also rejected here)
-  if (origin === '' || /[:/\\@?#\s]/.test(origin)) throw new Error('marque: bad origin');
-  let host: string;
-  try { host = new URL('https://' + origin).hostname; }
-  catch { throw new Error('marque: bad origin'); }
-  // URL normalizes shorthand/octal/hex IPv4 (127.1 → 127.0.0.1); isIP rejects EVERY
-  // IP literal form — a strict dotted-quad regex would miss the short forms.
-  if (isIP(host)) throw new Error('marque: ip origin not allowed');
-  const h = host.replace(/\.$/, '').toLowerCase();
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') ||
-      h.endsWith('.local') || !h.includes('.'))
-    throw new Error('marque: non-public origin');
-}
-
 export type ResolveKeys = (origin: string) => Promise<Address[]>;
 
+// SSRF guard + bounded fetch live in net.ts (shared with optional modules).
 export const httpsResolver: ResolveKeys = async (origin) => {
   assertPublicHost(origin);
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 3000);          // timeout
-  try {
-    const r = await fetch(`https://${origin}/.well-known/marque.json`, {
-      redirect: 'error',                                  // no cross-origin redirect follow
-      signal: ac.signal,
-      headers: { accept: 'application/json' },
-    });
-    if (!r.ok) return [];
-    if (Number(r.headers.get('content-length')) > 64 * 1024) return [];  // reject honest-huge bodies
-    const text = (await r.text()).slice(0, 64 * 1024);    // chunked/no-length bodies still bounded by the 3s timeout
-    const j = JSON.parse(text);
-    return Array.isArray(j?.keys) ? (j.keys as Address[]) : [];
-  } catch { return []; }
-  finally { clearTimeout(t); }
+  const j = await boundedJson(`https://${origin}/.well-known/marque.json`);
+  return Array.isArray(j?.keys) ? (j.keys as Address[]) : [];
 };
 
 // Small verify-side cache to cut latency + liveness dependency on the sender's host.

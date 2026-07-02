@@ -161,7 +161,7 @@ Post the tweet from `@eve`, then publish `"x": { "handle": "eve", "proof": "<twe
 ```ts
 import { verifyX } from "marque/x";
 const x = await verifyX("eve.example.com", r.signer);
-// x == { ok: true, identity: "x:@eve", handle: "eve" }
+// x == { ok: true, handle: "eve" }
 ```
 
 `verifyX` fetches the sender's marque.json, fetches the advertised tweet via oEmbed, and accepts only if the tweet's **author** is the advertised handle *and* the tweet carries an EIP-191 signature by `signer` over `marque/x-proof/v1\nx:@<handle>\n<address>`. Both directions are proven: the handle vouches for the key (only its owner can post the tweet) and the key vouches for the handle (only it can produce the signature). Like `verify`, it is total — every failure returns `{ ok: false, reason }`, never a throw.

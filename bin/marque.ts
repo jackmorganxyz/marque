@@ -35,10 +35,10 @@ if (cmd === 'keygen') {                       // marque keygen
     JSON.stringify({ v: 1, keys: [address] }),
   ].join('\n'));
 } else if (cmd === 'link-x') {                 // marque link-x <handle> — bind $MARQUE_PRIVATE_KEY to an X handle
-  const { handle, tweet, x } = linkX(need(a[0], '<handle>'),
+  const { tweet, x } = linkX(need(a[0], '<handle>'),
     process.env.MARQUE_PRIVATE_KEY as `0x${string}`);
   console.log([
-    `# 1. post this tweet from @${handle}:`,
+    `# 1. post this tweet from @${x.handle}:`,
     tweet,
     `# 2. add this to your marque.json next to "keys", with the posted tweet's URL:`,
     JSON.stringify({ x }),

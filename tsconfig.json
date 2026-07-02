@@ -12,5 +12,5 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["marque.ts", "eth.ts", "x.ts", "bin/marque.ts", "marque.test.ts", "x.test.ts"]
+  "include": ["marque.ts", "eth.ts", "net.ts", "x.ts", "bin/marque.ts", "marque.test.ts", "x.test.ts"]
 }
