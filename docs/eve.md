@@ -165,5 +165,5 @@ If the round trip returns `"key not published at origin"`, the crypto worked —
 - Act **only** on `{ ok: true }` **and** an allowlist hit. Trust no envelope field before both.
 - One dedicated key per agent. Never reuse, never commit, never log.
 - The well-known route serves the **address only** — if you ever find a private key there, that's an incident, rotate immediately.
-- Never add a fallback that resolves keys over plain DNS/HTTP when the https well-known fails — fail closed.
+- Never add a fallback that resolves keys any other way when the https well-known fetch fails — fail closed.
 - Full threat model and residual risks: README, "Security — read before shipping". Read it before changing any verification code.

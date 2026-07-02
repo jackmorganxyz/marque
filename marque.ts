@@ -216,7 +216,7 @@ export async function verify(
   // Canonicalize the identity label (case-insensitive host, trailing dot = same host)
   // so an exact-string allowlist can't be split by casing. Percent/IDN normalization
   // + homograph checks remain the caller's job (README #3). The "https:" prefix (no
-  // slashes — it's a label, not a URL) namespaces the assurance backend, so future
-  // "dns:…" / "x:…" identities can't collide with TLS-anchored ones in an allowlist.
+  // slashes — it's a label, not a URL) namespaces the assurance backend, so no
+  // future lower-assurance backend's identities can collide with TLS-anchored ones.
   return { ok: true, identity: `https:${c.origin.replace(/\.$/, '').toLowerCase()}`, signer: recovered };
 }

@@ -3,9 +3,15 @@
 [![CI](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml/badge.svg)](https://github.com/jackmorganxyz/marque/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Let one AI agent **sign** an outbound message with its own secp256k1 wallet key, and let a receiving agent **verify** which entity (which https origin) sent it — **with no shared secret**.
+Marque lets one AI agent prove to another exactly who sent a message.
 
-Trust is anchored in infrastructure the verifier already trusts: the sender publishes its wallet address at a static file on its *own* origin — `https://<origin>/.well-known/marque.json`, served over TLS — and the verifier reads the key straight from there. `verify()` returns an origin-level identity string like `https:eve.example.com`.
+The sender signs every outbound message with a private key only it holds. The receiver checks the signature and gets back a proven identity — the sender's domain, like `https:eve.example.com` — before acting on anything. No shared secret, no registration anywhere: the whole trust setup is one static file on a domain the sender already controls.
+
+**Sender sets up once.** `npx marque init` generates a keypair. The private key goes in an env var; the derived address (public, safe to share) gets published at `https://<your-domain>/.well-known/marque.json`.
+
+**Sender, per message.** `sign(payload, …)` wraps the JSON in a signed envelope; POST it to the receiver like any HTTP request.
+
+**Receiver, per message.** `verify(envelope, …)` checks the signature and recovers the address that made it, fetches `/.well-known/marque.json` from the domain the envelope claims to be from, and accepts only if the recovered address is published there. Only the domain's real owner can serve that file — so a match proves the message came from that domain.
 
 - **No blockchain, no contracts, no RPC, no gas.** The wallet is a standard Ethereum key, used purely as an identity anchor. Marque never touches a chain.
 - **No billing, no API keys.** The only secret an agent holds is its own signing private key.
@@ -49,7 +55,7 @@ const r = await verify(envelope, { selfOrigin: "bob.example.com", seen });
 if (r.ok && myAllowlist.has(r.identity)) act(envelope.payload, r.identity);
 ```
 
-`identity` is a namespaced label, not a URL — `https:` (no slashes) marks it as TLS-anchored, so future lower-assurance backends (`dns:…`, `x:…`) can never collide with it in an allowlist. `verify` returns a discriminated union: inside `if (r.ok)`, TypeScript knows `identity` and `signer` are present.
+`identity` is a namespaced label, not a URL — `https:` (no slashes) marks it as TLS-anchored, so no future lower-assurance backend could ever collide with it in an allowlist. `verify` returns a discriminated union: inside `if (r.ok)`, TypeScript knows `identity` and `signer` are present.
 
 ### Setup (once, by the sender's operator)
 
@@ -76,7 +82,7 @@ Prints `MARQUE_PRIVATE_KEY` (secret — never commit), `MARQUE_ADDRESS`, `MARQUE
 | `verify(msg, ctx)` | `ctx: { selfOrigin, seen?, resolveKeys?, now? }` → `Promise<VerifyResult>` | runs all local checks, then resolves keys from the origin. **Total function** — always resolves to `{ ok, reason }` and never throws on hostile input; act only on `{ ok: true }`. |
 | `httpsResolver` | `ResolveKeys` | default resolver: HTTPS `.well-known` only, with SSRF guard. |
 | `cached(resolver, ttlMs?)` | `→ ResolveKeys` | wraps a resolver with a short (default 60s) verify-side cache. |
-| `ResolveKeys` | `(origin: string) => Promise<Address[]>` | swap this to back identity with DNS / on-chain / X-bio. |
+| `ResolveKeys` | `(origin: string) => Promise<Address[]>` | swap this to back identity with an on-chain registry or your own key store. |
 | `payloadHash(p)`, `canon(v)` | `→ Hex`, `→ string` | the exact hash/canonical form Marque signs — for interop implementations and tests. |
 
 For **offline unit tests**, pass `resolveKeys: async () => [expectedAddress]` — no network.
@@ -118,23 +124,7 @@ Currently `agent_id == signer` and `scope == ""`. Both slots are reserved for a 
 
 ## Identity resolution
 
-| backend | assurance | shipped in `verify`? |
-|---|---|---|
-| **HTTPS `.well-known`** (`https://<origin>/.well-known/marque.json`) | **primary** — TLS-authenticated | ✅ default (`httpsResolver`) |
-| **DNS TXT** (`_marque.<origin>` = `v=1; addr=0x…`) | lower — no DNSSEC assumed | ❌ injectable only (see below) |
-| **X bio** (paste `0x…` into bio) | lowest — manual scrape | ❌ injectable only |
-
-**There is no automatic fallback.** An HTTPS failure yields `keys = []` and `verify` fails — it must *never* silently downgrade to unauthenticated DNS. DNS / X are only reached if you explicitly inject a resolver:
-
-```ts
-// Example DNS resolver (opt-in, explicitly weaker). Anchor the address to addr=.
-const dnsResolver: ResolveKeys = async (origin) => {
-  const txt = await resolveTxt(`_marque.${origin}`);            // your DNS lib
-  const m = txt.join("").match(/(?:^|;)\s*addr=(0x[0-9a-fA-F]{40})\b/);
-  return m ? [m[1] as `0x${string}`] : [];
-};
-await verify(msg, { selfOrigin, resolveKeys: dnsResolver });
-```
+Keys resolve from exactly one place: **`https://<origin>/.well-known/marque.json`**, fetched over TLS by the default `httpsResolver`. If that fetch fails, `keys = []` and `verify` fails — **fail closed**, never a fallback to a weaker, unauthenticated channel. `resolveKeys` stays injectable for offline tests and for swapping in a stronger backend (e.g. an on-chain registry) later.
 
 ---
 
@@ -190,7 +180,7 @@ The trust anchor is the sender's TLS-protected control of `https://<origin>`. Th
 3. **IDENTITY MEANING.** `verify()` proves the sender **controls `https://<origin>` at fetch time** — NOT that `<origin>` is an entity you intend to trust. **Compare the returned identity against your own allowlist** before acting. The identity is returned lowercased with any trailing dot stripped, but percent/IDN normalization and punycode / homograph lookalikes are still yours to defend against.
 4. **ORIGIN CONTROL IS THE ROOT OF TRUST.** Identity is only as strong as your continuous, exclusive control of the exact origin host and its TLS/DNS. A dangling subdomain / abandoned Vercel/Netlify/S3/Pages tenant / expired domain hands your identity to whoever claims it. Prefer operator-controlled apex/custom domains; remove dangling DNS.
 5. **NO REVOCATION GUARANTEE.** If your key leaks, attackers impersonate you until you rotate (`keys[]` add-then-remove; lag = verifier cache TTL). No global CRL. **Never commit the private key**; keep it out of logs and builds.
-6. **HTTPS ONLY, NO DNS DOWNGRADE.** Key resolution is https-only and must not silently fall back to unauthenticated DNS. DNS, if used, is explicitly lower-assurance.
+6. **HTTPS ONLY, FAIL CLOSED.** Key resolution is https-only. If the well-known fetch fails, `verify` fails — never add a fallback that resolves keys over any weaker, unauthenticated channel.
 7. **SSRF / DoS ON VERIFY.** `origin` is attacker-controlled and fetched on every inbound message; the built-in guard (URL-normalized public-host check that rejects every IP literal — including shorthand/octal/hex forms like `127.1` — plus userinfo, 3s timeout, 64KB cap, no redirect follow) must not be removed. DNS-rebinding to a private address remains an accepted residual (see below).
 8. **PAYLOAD CANONICALIZATION.** Restrict payloads to JSON-safe primitives: no floats, no integers `> 2^53`, no `NaN`/`Infinity`, no duplicate keys, NFC-normalized strings. `sign` rejects the dangerous subset (non-finite numbers, oversized integers); the rest is your responsibility.
 9. **CALLER CONTRACT.** Act only on `{ ok: true }`; trust no field before that.
@@ -206,7 +196,7 @@ The trust anchor is the sender's TLS-protected control of `https://<origin>`. Th
 
 ## Non-goals / future extensions
 
-**Out of scope by design:** no blockchain / contracts / on-chain delegation / RPC; no billing / API keys / Marque-run server; no owner/runtime key split (single key signs everything — `agent_id`/`scope` reserved); no human/platform identity (`x:@eve`, `github:eve`); no global revocation / CRL; no shipped shared nonce store (injectable interface only); no full RFC 8785 canonicalizer; no DNS / X resolver wired into `verify` by default.
+**Out of scope by design:** no blockchain / contracts / on-chain delegation / RPC; no billing / API keys / Marque-run server; no owner/runtime key split (single key signs everything — `agent_id`/`scope` reserved); no human/platform identity (`x:@eve`, `github:eve`); no global revocation / CRL; no shipped shared nonce store (injectable interface only); no full RFC 8785 canonicalizer.
 
 **Backward-compatible extension points** (the canonical field set is preserved, so these are localized changes, not data migrations):
 
