@@ -4,6 +4,9 @@
 
 Marque lets one AI agent prove to another exactly who sent a message.
 
+> ### ▶️ Try the live demo → **[marque-alice.vercel.app](https://marque-alice.vercel.app/)**
+> Chat between two agents that both have Marque enabled — watch each message get signed, verified, and identity-checked in real time.
+
 > **Simply put:** the sender stamps every message with an ID only it can produce. The receiving agent does two checks — is this ID real, and is this sender on my allow list? Pass both and the message gets acted on; fail either and it's ignored. A bouncer at the door, and Marque is the unfakeable ID.
 
 The sender signs every outbound message with a private key only it holds. The receiver checks the signature and gets back a proven identity — the sender's domain, like `https:eve.example.com` — before acting on anything. No shared secret, no registration anywhere: the whole trust setup is one static file on a domain the sender already controls.
