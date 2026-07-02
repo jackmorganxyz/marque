@@ -269,6 +269,49 @@ echo '{"ping":1}' | MARQUE_PRIVATE_KEY=0x… npx marque sign <origin> <origin> \
 
 Finish by reporting to the operator: the agent's origin, its published address, the current allowlist, and that peers must add this origin to *their* allowlist before they'll accept its messages.
 
+## Optional — X handle verification
+
+Skip freely; nothing above depends on it. This binds the agent's signing key to an X (Twitter) handle as a **second, lower-assurance factor** on top of the TLS identity, published in the same well-known file (full protocol and caveats: README, "X handle verification"). Only do this if the operator asks for it and controls the X account.
+
+**Build the proof** (needs `MARQUE_PRIVATE_KEY` — run in the same environment that holds the Step 3 vars):
+
+```bash
+npx marque link-x <handle>        # prints the proof tweet + the marque.json "x" entry
+```
+
+**Publish it.** Have the operator post the printed tweet from that X account, then set two more vars where the Gateway is launched (next to the Step 3 vars) and restart the Gateway:
+
+```
+MARQUE_X_HANDLE=<handle>
+MARQUE_X_PROOF=https://x.com/<handle>/status/<tweet-id>
+```
+
+**Extend the Step 4 well-known handler** so it advertises the proof next to the keys (unset vars leave the file byte-identical to before):
+
+```ts
+handler: (_req, res) => {
+  const keys = (process.env.MARQUE_ADDRESS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const { MARQUE_X_HANDLE: handle, MARQUE_X_PROOF: proof } = process.env;
+  res.statusCode = 200;
+  res.setHeader("content-type", "application/json");
+  res.setHeader("cache-control", "public, max-age=300");
+  res.end(JSON.stringify({ v: 1, keys, ...(handle && proof ? { x: { handle, proof } } : {}) }));
+  return true;
+},
+```
+
+Restart the Gateway, then confirm `curl https://<origin>/.well-known/marque.json` now includes `"x":{"handle":"…","proof":"…"}`.
+
+**Checking a peer's handle** works from any Marque receiver — after a successful `verify()`, once per peer, not per message:
+
+```ts
+import { verifyX } from "marque/x";
+const x = await verifyX("bob.example.com", r.signer);
+// → { ok: true, handle: "bob" }  or  { ok: false, reason: "…" }
+```
+
+Handles are mutable and recyclable: treat a verified handle as an extra attribute of the TLS identity, never as a substitute for the allowlist.
+
 ## Failure modes
 
 | `reason` | likely cause | fix |
@@ -297,7 +340,7 @@ OpenClaw-specific:
 
 - Act **only** on `{ ok: true }` **and** an allowlist hit. Trust no envelope field before both.
 - One dedicated key per agent. Never reuse, never commit, never log.
-- The well-known route serves the **address only** — if you ever find a private key there, that's an incident, rotate immediately.
+- The well-known route serves **public values only** — the address (and the optional X proof entry), never the private key. If you ever find a private key there, that's an incident, rotate immediately.
 - Never add a fallback that resolves keys any other way when the https well-known fetch fails — fail closed.
 - Never expose the rest of the Gateway (dashboard, WebSocket, RPC) on the public hostname — only the two Marque paths.
 - Full threat model and residual risks: README, "Security — read before shipping". Read it before changing any verification code.
