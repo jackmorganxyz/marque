@@ -159,7 +159,7 @@ export const withMarque = (selfOrigin: string, handler: any) => async (req: any,
 };
 ```
 
-**Well-known route** (Next.js App Router — the address, never the private key; walkthrough in [`docs/eve.md`](docs/eve.md)):
+**Well-known route** (Next.js App Router shown — the address, never the private key; every [quick start](#quick-starts) has the equivalent for its stack):
 
 ```ts
 // app/.well-known/marque.json/route.ts
@@ -176,47 +176,23 @@ Serve it from a route not subject to shared/edge cache-key confusion; short `max
 
 ---
 
-## Quick start for a Vercel `eve` agent
+## Quick starts
 
-Hand **[docs/eve.md](docs/eve.md)** straight to an AI coding agent and it goes from an empty directory to a **deployed** eve agent that signs outbound messages and verifies inbound ones against an allowlist: scaffold, keys, the three integration files, operator customization, Vercel deploy — plus verification commands, a failure-mode table, and the hard security rules.
+Every guide below is self-contained and written for an AI coding agent: hand it the file (or point it at the URL) and it goes from zero to a **deployed** agent that signs outbound messages and verifies inbound ones against an allowlist — scaffold, keys, the integration files, operator customization, deploy, live verification, a failure-mode table, and the hard security rules. Pick the one matching your stack.
 
-```bash
-npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
-# then follow docs/eve.md: well-known route, send-signed-message tool, /api/inbox, deploy
-```
-
----
-
-## Quick start for a Cloudflare Flue agent
-
-Same idea, different stack: hand **[docs/flue.md](docs/flue.md)** to an AI coding agent and it goes from an empty directory to a **deployed** [Flue](https://flueframework.com/) agent on Cloudflare Workers — signing tool, well-known + verified `/inbox` in `src/app.ts`, operator customization, Workers deploy, live verification, failure modes, hard rules.
+| Stack | Guide | Integration shape |
+|---|---|---|
+| [eve](https://vercel.com/eve) on Vercel | [docs/eve.md](docs/eve.md) | Next.js well-known route + `/api/inbox`, `send-signed-message` tool |
+| [Flue](https://flueframework.com/) on Cloudflare Workers | [docs/flue.md](docs/flue.md) | well-known + `/inbox` in the Hono `app.ts`, `send_signed_message` tool |
+| [OpenClaw](https://openclaw.ai/) | [docs/openclaw.md](docs/openclaw.md) | one Gateway plugin: tool + both routes, reverse-proxied on your domain |
+| [Claude Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview) | [docs/managed-agents.md](docs/managed-agents.md) | host-side orchestrator: well-known + inbox on your domain, signs the agent's custom-tool calls |
 
 ```bash
 npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
-# then follow docs/flue.md: well-known + /inbox in src/app.ts, send_signed_message tool, deploy
+# then hand your stack's guide from the table to your coding agent
 ```
 
----
-
-## Quick start for an OpenClaw agent
-
-Your [OpenClaw](https://openclaw.ai/) assistant can hold a verifiable identity too: **[docs/openclaw.md](docs/openclaw.md)** walks an AI coding agent through one Gateway plugin — signing tool, well-known + verified inbox routes — then publishes just those two paths on a public domain via a reverse proxy. Inbound messages reach the model only after `verify()` passes.
-
-```bash
-npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
-# then follow docs/openclaw.md: one plugin file, install --link, reverse-proxy the two routes
-```
-
----
-
-## Quick start for a Claude Managed Agent
-
-For an agent hosted on Anthropic's infrastructure, **[docs/managed-agents.md](docs/managed-agents.md)** puts the Marque half in a small orchestrator you deploy on your own domain: it serves the well-known, verifies inbound messages into the agent's session, and executes the agent's `send_signed_message` custom tool host-side — the signing key never enters the sandbox.
-
-```bash
-npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
-# then follow docs/managed-agents.md: setup.ts (agent + custom tool), server.ts (orchestrator), deploy
-```
+Running something else? [Inbound middleware + well-known route](#inbound-middleware--well-known-route) above shows the raw `sign()`/`verify()` wiring — Marque fits any agent with a Node runtime, an https origin it controls, and an inbound HTTP handler.
 
 ---
 

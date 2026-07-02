@@ -1,6 +1,6 @@
 # Marque + OpenClaw quick start — zero to a publicly verifiable signing agent
 
-> **Audience: AI coding agents.** This file is self-contained — paste it (or point your agent at it) and it walks you from an existing [OpenClaw](https://openclaw.ai/) install to a Gateway plugin that signs every outbound agent-to-agent message and verifies every inbound one against an allowlist, served on a public domain. Humans welcome too.
+> **Audience: AI coding agents.** This file is self-contained — paste it (or point your agent at it) and it walks you from an existing [OpenClaw](https://openclaw.ai/) install to a **deployed** Gateway plugin that signs every outbound agent-to-agent message and verifies every inbound one against an allowlist, published on a public domain. Humans welcome too.
 
 Marque lets this agent **sign** outbound messages with its own secp256k1 key and **verify** which https origin sent any inbound message — no shared secret, no registry, no chain. Identity is anchored at `https://<origin>/.well-known/marque.json`, served from the agent's own domain over TLS.
 
