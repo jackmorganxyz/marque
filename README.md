@@ -187,6 +187,17 @@ npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + e
 
 ---
 
+## Quick start for a Cloudflare Flue agent
+
+Same idea, different stack: hand **[docs/flue.md](docs/flue.md)** to an AI coding agent and it goes from an empty directory to a **deployed** [Flue](https://flueframework.com/) agent on Cloudflare Workers — signing tool, well-known + verified `/inbox` in `src/app.ts`, operator customization, Workers deploy, live verification, failure modes, hard rules.
+
+```bash
+npm i github:jackmorganxyz/marque && npx marque init eve.example.com   # key + env vars
+# then follow docs/flue.md: well-known + /inbox in src/app.ts, send_signed_message tool, deploy
+```
+
+---
+
 ## ⚠ Security — read before shipping
 
 The trust anchor is the sender's TLS-protected control of `https://<origin>`. There is no global registry; identity is only as strong as that control. This is weaker than an on-chain registry (not globally revocable, not tamper-evident) but dependency-free — every warning below follows from that choice.
