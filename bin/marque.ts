@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Marque CLI — for humans/scripts, not the hot path. Commands: init|keygen|sign|verify.
+// Marque CLI — for humans/scripts, not the hot path. Commands: init|keygen|sign|verify|link-x.
 import { generateAgent, sign, verify } from '../marque.js';
+import { linkX } from '../x.js';
 
 const [cmd, ...a] = process.argv.slice(2);
 const read = async () => {                       // read JSON from stdin (Node stream)
@@ -33,6 +34,16 @@ if (cmd === 'keygen') {                       // marque keygen
     `# serve this at https://${origin}/.well-known/marque.json :`,
     JSON.stringify({ v: 1, keys: [address] }),
   ].join('\n'));
+} else if (cmd === 'link-x') {                 // marque link-x <handle> — bind $MARQUE_PRIVATE_KEY to an X handle
+  const { tweet, x } = linkX(need(a[0], '<handle>'),
+    process.env.MARQUE_PRIVATE_KEY as `0x${string}`);
+  console.log([
+    `# 1. post this tweet from @${x.handle}:`,
+    tweet,
+    `# 2. add this to your marque.json next to "keys", with the posted tweet's URL:`,
+    JSON.stringify({ x }),
+    '# receivers verify with: verifyX(origin, signer)  — import from "marque/x"',
+  ].join('\n'));
 } else {
   console.error([
     'usage: marque <command>',
@@ -40,6 +51,7 @@ if (cmd === 'keygen') {                       // marque keygen
     '  keygen                 new keypair as JSON',
     '  sign <origin> <aud>    sign stdin JSON with $MARQUE_PRIVATE_KEY',
     '  verify <selfOrigin>    verify a signed envelope from stdin',
+    '  link-x <handle>        X proof tweet + marque.json snippet for $MARQUE_PRIVATE_KEY',
   ].join('\n'));
   process.exit(1);
 }

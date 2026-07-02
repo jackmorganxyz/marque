@@ -36,4 +36,4 @@ Even inside one org, service-to-service auth usually means minting and rotating 
 
 ---
 
-**Not a fit:** authenticating humans or platform accounts (`@eve` on X, `github:eve`), messages that must stay valid longer than 300 seconds, or senders that don't control a domain. See [Non-goals](../README.md#non-goals--future-extensions).
+**Not a fit:** authenticating humans or platform accounts (`github:eve` — though X handles are available as an optional extra factor, see [X handle verification](../README.md#x-handle-verification-optional)), messages that must stay valid longer than 300 seconds, or senders that don't control a domain. See [Non-goals](../README.md#non-goals--future-extensions).
