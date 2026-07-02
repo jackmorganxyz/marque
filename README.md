@@ -101,7 +101,15 @@ Prints `MARQUE_PRIVATE_KEY` (secret — never commit), `MARQUE_ADDRESS`, `MARQUE
 | `ResolveKeys` | `(origin: string) => Promise<Address[]>` | swap this to back identity with an on-chain registry or your own key store. |
 | `payloadHash(p)`, `canon(v)` | `→ Hex`, `→ string` | the exact hash/canonical form Marque signs — for interop implementations and tests. |
 
-For **offline unit tests**, pass `resolveKeys: async () => [expectedAddress]` — no network.
+From the optional **`marque/x`** subpath (see [X handle verification](#x-handle-verification-optional)):
+
+| export | signature | notes |
+|---|---|---|
+| `verifyX(origin, signer, opts?)` | `opts: { fetchJson? }` → `Promise<XVerifyResult>` | checks the X proof advertised in the origin's marque.json. **Total** like `verify` — always resolves to `{ ok, … }`, never throws. |
+| `linkX(handle, privateKey)` | `→ { tweet, x }` | sender-side proof builder (what `npx marque link-x` prints). |
+| `xProofStatement(handle, address)` | `→ string` | the exact signed proof statement — interop anchor, like `payloadHash`. |
+
+For **offline unit tests**, pass `resolveKeys: async () => [expectedAddress]` to `verify` and `fetchJson: async () => stubbedJson` to `verifyX` — no network.
 
 ### The envelope
 
@@ -154,7 +162,7 @@ Keys resolve from exactly one place: **`https://<origin>/.well-known/marque.json
 npx marque link-x eve   # prints the proof tweet + the marque.json "x" entry
 ```
 
-Post the tweet from `@eve`, then publish `"x": { "handle": "eve", "proof": "<tweet-url>" }` next to `"keys"` in your marque.json.
+Post the tweet from `@eve`, then publish `"x": { "handle": "eve", "proof": "<tweet-url>" }` next to `"keys"` in your marque.json. Env-driven well-known route? Serve it from `MARQUE_X_HANDLE` / `MARQUE_X_PROOF` the same way the route serves `MARQUE_ADDRESS` — every [quick start](#quick-starts) has the exact patch for its stack in its "Optional — X handle verification" section.
 
 **Receiver, per peer** (after a successful `verify()` — not per message):
 
