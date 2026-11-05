@@ -1,11 +1,7 @@
 # Security policy
 
-Marque is a signing/verification library — treat any bug in `verify()`, `canon()`, or the SSRF guard as potentially security-relevant.
+Marque verifies message signatures, recipient binding, freshness and replay protection through caller-provided storage. Bugs in signature recovery, JSON canonicalization or these checks are security-relevant.
 
-## Reporting
+Use GitHub's private vulnerability reporting on this repository, or email **contact@jackmorgan.xyz**. Please do not open a public issue for anything exploitable.
 
-Use GitHub's private vulnerability reporting on this repo, or email **contact@jackmorgan.xyz**. Please don't open a public issue for anything exploitable.
-
-## Scope
-
-The threat model, hard caller requirements, and accepted residual risks (stolen key before rotation, subdomain takeover, TLS/CA compromise, DNS rebinding on the key fetch) are documented in the [README](README.md)'s "Security — read before shipping" section. Reports that reduce to a documented residual are still welcome, but may be closed as by-design.
+The caller owns key custody, identity mapping, address trust, action permissions, input size limits and atomic replay storage. A valid signature proves key possession, not that the message is safe or authorised. See the [README](README.md#security-boundaries) for the caller contract.

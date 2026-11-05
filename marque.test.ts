@@ -1,294 +1,230 @@
-// marque.test.ts — self-checks + frozen regression vector.
-// Run: npm test   (node --import tsx --test marque.test.ts)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { privateKeyToAddress, signMessage, isAddressEqual } from './eth.js';
-import {
-  canon, payloadHash, sign, verify, generateAgent, httpsResolver, cached, SKEW,
-  type Signed, type ResolveKeys,
-} from './marque.js';
+import * as marque from './marque.js';
+import { sign, verify, type Signed, type Hex } from './marque.js';
+import { privateKeyToAddress, signMessage } from './eth.js';
 
-const EVE = 'eve.example.com';
-const BOB = 'bob.example.com';
+// Public test keys, never use for real messages or funds.
+const PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+const OTHER_KEY = ('0x' + '01'.repeat(32)) as Hex;
+const ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+const AUD = 'bob-inbox';
+const NOW = 1751371200;
+const opts = { privateKey: PRIVATE_KEY, aud: AUD } as const;
 
-// ---- 2. canon + payloadHash ----
-test('canon sorts keys and stays compact', () => {
-  assert.equal(canon({ b: 1, a: 2 }), '{"a":2,"b":1}');
-  assert.equal(canon([3, 1]), '[3,1]');
-  assert.equal(canon('x'), '"x"');
-  assert.equal(canon(null), 'null');
-});
-
-test('key order does not change the hash', () => {
-  assert.equal(payloadHash({ a: 1, b: { c: 2, d: 3 } }), payloadHash({ b: { d: 3, c: 2 }, a: 1 }));
-});
-
-test('isAddressEqual is case-insensitive and rejects non-addresses', () => {
-  const A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-  assert.equal(isAddressEqual(A, A.toLowerCase()), true);
-  assert.throws(() => isAddressEqual('junk', A), /bad address/);
-});
-
-test('canon refuses values whose canon form differs from the JSON wire', () => {
-  assert.throws(() => canon(() => 1), /not JSON-safe/);        // function
-  assert.throws(() => canon(10n as any), /not JSON-safe/);     // bigint
-  assert.throws(() => canon(Symbol('x') as any), /not JSON-safe/);
-  assert.throws(() => canon(new Date(0)), /not JSON-safe/);    // toJSON differs
-  assert.throws(() => canon({ a: new Date(0) }), /not JSON-safe/);
-});
-
-// ---- 3. payload safety (assertJsonSafe fires at sign time) ----
-const signOpts = { privateKey:
-  '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const,
-  origin: EVE, aud: BOB };
-
-test('sign rejects unsafe numbers, accepts safe payloads', async () => {
-  await assert.rejects(sign({ n: 1.5e308 }, signOpts), /unsafe number/);
-  await assert.rejects(sign({ n: 2 ** 60 }, signOpts), /unsafe number/);
-  await assert.rejects(sign({ n: Infinity }, signOpts), /unsafe number/);
-  await sign({ n: 42, s: 'hi', nested: { a: [1, 2, 3] } }, signOpts); // does not throw
-});
-
-// ---- 4. generateAgent ----
-test('generateAgent returns a matching checksummed address + well-known', () => {
-  const g = generateAgent();
-  assert.equal(privateKeyToAddress(g.privateKey), g.address);
-  assert.match(g.address, /^0x[0-9a-fA-F]{40}$/);
-  assert.notEqual(g.address, g.address.toLowerCase());        // EIP-55 mixed-case
-  assert.deepEqual(g.wellKnown, { v: 1, keys: [g.address] });
-});
-
-// ---- 5. sign shape ----
-test('sign produces the full envelope', async () => {
-  const s = await sign({ hello: 'world' }, signOpts);
-  assert.equal(Object.keys(s).length, 12);                    // 10 core + sig + payload
-  assert.equal(s.sig.length, 132);                            // 0x + 65 bytes
-  assert.equal(s.nonce.length, 26);                           // 0x + 12 bytes
-  assert.equal(s.exp, s.ts + SKEW);
-  assert.equal(s.signer, s.agent_id);
-  assert.equal(s.scope, '');
-  assert.equal(s.v, 1);
-});
-
-test('sign caps ttl at SKEW (longer exp cannot outlive the skew check anyway)', async () => {
-  const s = await sign({ x: 1 }, { ...signOpts, ttl: 9999 });
-  assert.equal(s.exp, s.ts + SKEW);
-});
-
-// ---- 6. httpsResolver SSRF guard + cached ----
-test('httpsResolver rejects non-public / malformed origins', async () => {
-  for (const bad of ['localhost', '10.0.0.1', 'x.internal', 'a.com:8080', 'a.com/b', 'nodot']) {
-    await assert.rejects(httpsResolver(bad), /marque:/, `expected reject for ${bad}`);
-  }
-});
-
-test('httpsResolver reads keys on 200, empty on non-200; cached hits once', async () => {
-  const A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-  const orig = globalThis.fetch;
-  try {
-    const hdrs = { get: () => null };   // real fetch always exposes a Headers; stub the content-length lookup
-    globalThis.fetch = (async () => ({ ok: true, headers: hdrs, text: async () => JSON.stringify({ v: 1, keys: [A] }) })) as any;
-    assert.deepEqual(await httpsResolver(EVE), [A]);
-    globalThis.fetch = (async () => ({ ok: false, headers: hdrs, text: async () => '' })) as any;
-    assert.deepEqual(await httpsResolver(EVE), []);
-
-    let calls = 0;
-    const counting: ResolveKeys = async () => { calls++; return [A]; };
-    const c = cached(counting, 60_000);
-    await c(EVE); await c(EVE);
-    assert.equal(calls, 1);                                    // second call served from cache
-  } finally { globalThis.fetch = orig; }
-});
-
-// ---- regression: SSRF guard catches shorthand / octal / userinfo IPv4 ----
-test('httpsResolver rejects non-canonical IPv4 + userinfo bypasses', async () => {
-  for (const bad of ['127.1', '10.1', '0177.0.0.1', '0x7f.0.0.1', '192.168.1',
-                     '2130706433', 'user@127.0.0.1', 'a.com?x=1', 'a.com#f']) {
-    await assert.rejects(httpsResolver(bad), /marque:/, `expected reject for ${bad}`);
-  }
-});
-
-// ---- 7 + 8. verify ordered checks (offline resolver) ----
-const only = (addr: string): ResolveKeys => async () => [addr as `0x${string}`];
-
-async function baseline() {
-  const s = await sign({ task: 'summarize' }, signOpts);
-  const ok = { selfOrigin: BOB, resolveKeys: only(s.signer), now: s.ts, seen: new Map<string, number>() };
-  return { s, ok };
+function nonceStore() {
+  const seen = new Set<string>();
+  return (key: string, _expiresAt: number) => {
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
 }
 
-test('verify happy path', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify(s, ok);
-  assert.deepEqual(r, { ok: true, identity: `https:${EVE}`, signer: s.signer });
+// Literal canonical key order, independent of the library's serializer.
+function fixture(changes: Partial<Omit<Signed, 'sig'>> = {}, privateKey: Hex = PRIVATE_KEY): Signed {
+  const message = {
+    aud: AUD, exp: NOW + 300, nonce: '0x9f3c1a7be44d0521c0a8f2e6' as Hex,
+    payload: 42, signer: privateKeyToAddress(privateKey), ts: NOW, v: 2 as const,
+    ...changes,
+  };
+  return { ...message, sig: signMessage('marque/v2\n' + JSON.stringify(message), privateKey) };
+}
+
+const context = () => ({ aud: AUD, consumeNonce: nonceStore(), now: NOW });
+
+test('the public runtime API is only sign and verify', () => {
+  assert.deepEqual(Object.keys(marque).sort(), ['sign', 'verify']);
 });
 
-test('verify rejects tampered payload', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify({ ...s, payload: { task: 'DELETE' } }, ok);
-  assert.equal(r.reason, 'payload mismatch');
+test('sign and verify round-trip JSON without domain or identity services', async t => {
+  const fetch = t.mock.method(globalThis, 'fetch', () => { throw new Error('unexpected network request'); });
+  const payload = { task: 'summarize', text: 'Hello 🌍', options: [null, true, 1.25] };
+  const message = await sign(payload, opts);
+  assert.equal(message.v, 2);
+  assert.equal(message.signer, ADDRESS);
+  assert.equal(message.exp, message.ts + 300);
+  assert.match(message.nonce, /^0x[0-9a-f]{24}$/);
+  assert.match(message.sig, /^0x[0-9a-f]{130}$/);
+  assert.deepEqual(Object.keys(message).sort(), ['aud', 'exp', 'nonce', 'payload', 'sig', 'signer', 'ts', 'v']);
+  assert.deepEqual(await verify(JSON.parse(JSON.stringify(message)), { ...context(), now: message.ts }), {
+    ok: true, signer: ADDRESS,
+  });
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
-test('verify rejects wrong audience', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify(s, { ...ok, selfOrigin: 'carol.example.com' });
-  assert.equal(r.reason, 'wrong audience');
+test('JSON object key order does not change a signature; array order does', async () => {
+  const message = await sign({ z: [1, 2], a: { b: 'x', a: 'y' } }, opts);
+  const ctx = { ...context(), now: message.ts };
+  assert.equal((await verify({ ...message, payload: { a: { a: 'y', b: 'x' }, z: [1, 2] } }, ctx)).ok, true);
+  assert.equal((await verify({ ...message, payload: { a: { a: 'y', b: 'x' }, z: [2, 1] } }, ctx)).ok, false);
 });
 
-test('verify rejects expired', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify(s, { ...ok, now: s.exp + 1 });
-  assert.equal(r.reason, 'expired');
+test('sign validates audience, key and lifetime', async () => {
+  for (const aud of ['', null, 42])
+    await assert.rejects(sign(null, { ...opts, aud: aud as string }), /audience/);
+  for (const ttl of [0, -1, 1.5, 301, NaN, Infinity, '60'])
+    await assert.rejects(sign(null, { ...opts, ttl: ttl as number }), /ttl/);
+  for (const privateKey of ['bad', '0x01', '0x' + '00'.repeat(32), '0x' + 'ff'.repeat(32)])
+    await assert.rejects(sign(null, { ...opts, privateKey: privateKey as Hex }));
+  const short = await sign(null, { ...opts, ttl: 1 });
+  assert.equal(short.exp, short.ts + 1);
 });
 
-test('verify rejects clock skew', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify(s, { ...ok, now: s.ts - (SKEW + 100) }); // fresh exp, stale ts
-  assert.equal(r.reason, 'clock skew');
+test('unsafe payloads fail at signing and verification', async () => {
+  const bad = [undefined, NaN, Infinity, -Infinity, 2 ** 60, 10n, () => 1, Symbol('x'),
+    new Date(0), new Map(), new Set(), new Number(1), [1, , 3], { nested: undefined },
+    { toJSON: () => 'different' }];
+  for (const payload of bad) {
+    await assert.rejects(sign(payload, opts), /not JSON-safe/);
+    assert.equal((await verify({ ...fixture(), payload }, context())).ok, false);
+  }
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  await assert.rejects(sign(cyclic, opts));
+  assert.equal((await verify({ ...fixture(), payload: cyclic }, context())).ok, false);
 });
 
-test('verify rejects replay (same nonce twice)', async () => {
-  const { s, ok } = await baseline();
-  assert.equal((await verify(s, ok)).ok, true);
-  assert.equal((await verify(s, ok)).reason, 'replay');
+test('a valid signature from any address verifies; trust is the caller decision', async () => {
+  const message = fixture({}, OTHER_KEY);
+  const result = await verify(message, context());
+  assert.deepEqual(result, { ok: true, signer: privateKeyToAddress(OTHER_KEY) });
+  const trusted = new Set([ADDRESS.toLowerCase()]);
+  assert.equal(result.ok && trusted.has(result.signer.toLowerCase()), false);
 });
 
-test('verify rejects key not published at origin', async () => {
-  const { s, ok } = await baseline();
-  const r = await verify(s, { ...ok, resolveKeys: async () => [] });
-  assert.equal(r.reason, 'key not published at origin');
-});
-
-test('verify rejects a spliced (wrong) signature', async () => {
-  const { s, ok } = await baseline();
-  const other = await sign({ task: 'other' }, signOpts); // valid sig over a different core
-  const r = await verify({ ...s, sig: other.sig }, ok);
-  assert.equal(r.reason, 'signer mismatch');
-});
-
-// ---- regression: verify RETURNS {ok:false}, never throws, on hostile input ----
-test('verify never throws on malformed envelopes', async () => {
-  const { s, ok } = await baseline();
-  const bad: [string, any][] = [
-    ['null msg', null],
-    ['non-object', 'not-an-envelope'],
-    ['truncated sig', { ...s, sig: s.sig.slice(0, 130) }],
-    ['non-hex sig', { ...s, sig: 'nope' }],
-    ['numeric sig', { ...s, sig: 12345 }],
-    ['bad signer address', { ...s, signer: 'not-an-address' }],
-    ['bad agent_id address', { ...s, agent_id: 'not-an-address' }],
-    ['non-numeric ts', { ...s, ts: 'soon' }],
-    ['missing payload', (() => { const { payload, ...rest } = s; return rest; })()],
+test('every message field is bound by the signature', async () => {
+  const message = fixture();
+  const changes = [
+    { payload: 43 }, { aud: 'carol-inbox' }, { ts: NOW + 1 }, { exp: NOW + 299 },
+    { nonce: '0x000000000000000000000000' }, { signer: privateKeyToAddress(OTHER_KEY) },
+    { sig: fixture({}, OTHER_KEY).sig },
   ];
-  for (const [name, m] of bad) {
-    const r = await verify(m, ok);              // must resolve, not reject
-    assert.equal(r.ok, false, `${name} should be ok:false`);
+  for (const change of changes) {
+    let consumed = false;
+    const tampered = { ...message, ...change };
+    const result = await verify(tampered, {
+      ...context(), aud: tampered.aud, consumeNonce: () => { consumed = true; return true; },
+    });
+    assert.equal(result.ok, false, JSON.stringify(change));
+    assert.equal(consumed, false);
   }
 });
 
-// ---- regression: nonce retained across the whole freshness window under skew ----
-// sign() clamps ttl, but a forger doesn't — hand-craft a long-exp envelope directly.
-test('replay blocked even when receiver clock trails the sender', async () => {
-  const addr = privateKeyToAddress(signOpts.privateKey);
-  const ts = 1751371200;
-  const c = {
-    v: 1 as const, origin: EVE, signer: addr, agent_id: addr, scope: '', aud: BOB,
-    ts, exp: ts + 1000, nonce: '0x9f3c1a7be44d0521c0a8f2e6' as const,   // exp > ts + SKEW
-    payload_hash: payloadHash({ x: 1 }),
-  };
-  const s: Signed = { ...c, sig: signMessage('marque/v1\n' + canon(c), signOpts.privateKey), payload: { x: 1 } };
+test('a genuine message addressed elsewhere is rejected', async () => {
+  assert.equal((await verify(fixture(), { ...context(), aud: 'carol-inbox' })).reason, 'wrong audience');
+  assert.equal((await verify(fixture(), { ...context(), aud: 'BOB-INBOX' })).reason, 'wrong audience');
+});
+
+test('expiry, clock skew and maximum lifetime are enforced on signed input', async () => {
+  assert.equal((await verify(fixture(), { ...context(), now: NOW + 300 })).reason, 'expired');
+  assert.equal((await verify(fixture(), { ...context(), now: NOW - 301 })).reason, 'clock skew');
+  assert.equal((await verify(fixture(), { ...context(), now: NOW - 300 })).ok, true);
+  assert.equal((await verify(fixture(), { ...context(), now: NOW + 299 })).ok, true);
+  for (const changes of [{ exp: NOW }, { exp: NOW + 301 }, { ts: NOW + 0.5 }, { exp: NOW + 1.5 }])
+    assert.equal((await verify(fixture(changes), context())).ok, false);
+});
+
+test('malformed or extended envelopes return a failure without throwing', async () => {
+  const message = fixture();
+  const noPayload: Partial<Signed> = { ...message };
+  delete noPayload.payload;
+  const throwing = new Proxy({}, { ownKeys() { throw new Error('hostile object'); } });
+  const bad = [null, undefined, 'text', 42, [], {}, noPayload, throwing,
+    { ...message, v: 1 }, { ...message, origin: 'eve.example.com' },
+    { ...message, sig: 'nope' }, { ...message, sig: message.sig.slice(0, -2) },
+    { ...message, sig: message.sig.slice(0, -2) + 'ff' },
+    { ...message, signer: 'not-an-address' }, { ...message, nonce: '' },
+    { ...message, nonce: 42 }, { ...message, aud: null },
+    { ...message, ts: 'soon' }, { ...message, ts: -1 }, { ...message, exp: Infinity }];
+  for (const input of bad) assert.equal((await verify(input, context())).ok, false);
+});
+
+test('missing or invalid verification context cannot disable checks', async () => {
+  const bad = [undefined, null, {}, { ...context(), aud: '' }, { ...context(), now: NaN },
+    { ...context(), now: NOW + 0.5 }, { ...context(), consumeNonce: undefined }];
+  for (const ctx of bad) assert.equal((await verify(fixture(), ctx as Parameters<typeof verify>[1])).ok, false);
+});
+
+test('replays are rejected and forged messages do not consume a genuine nonce', async () => {
+  const message = fixture();
+  const ctx = context();
+  assert.equal((await verify({ ...message, payload: 'forged' }, ctx)).ok, false);
+  assert.equal((await verify(message, ctx)).ok, true);
+  assert.equal((await verify(message, ctx)).reason, 'replay');
+});
+
+test('nonce storage receives the signed expiry and separates senders and audiences', async () => {
+  const records: [string, number][] = [];
+  const store = nonceStore();
+  const ctx = { ...context(), consumeNonce: (key: string, expiry: number) => {
+    records.push([key, expiry]);
+    return store(key, expiry);
+  } };
+  assert.equal((await verify(fixture(), ctx)).ok, true);
+  assert.equal((await verify(fixture({}, OTHER_KEY), ctx)).ok, true);
+  assert.equal((await verify(fixture({ aud: 'carol-inbox' }), { ...ctx, aud: 'carol-inbox' })).ok, true);
+  assert.equal(new Set(records.map(([key]) => key)).size, 3);
+  assert.ok(records.every(([, expiry]) => expiry === NOW + 300));
+});
+
+test('nonce casing cannot bypass replay detection', async () => {
+  const ctx = context();
+  assert.equal((await verify(fixture(), ctx)).ok, true);
+  const upper = fixture({ nonce: '0x9F3C1A7BE44D0521C0A8F2E6', signer: ADDRESS.toLowerCase() as Hex });
+  assert.equal((await verify(upper, ctx)).reason, 'replay');
+});
+
+test('concurrent verifications work with an async atomic replay store', async () => {
+  const store = nonceStore();
+  const ctx = { ...context(), consumeNonce: async (key: string, expiry: number) => {
+    await Promise.resolve();
+    return store(key, expiry);
+  } };
+  const results = await Promise.all(Array.from({ length: 8 }, () => verify(fixture(), ctx)));
+  assert.equal(results.filter(r => r.ok).length, 1);
+  assert.ok(results.filter(r => !r.ok).every(r => r.reason === 'replay'));
+});
+
+test('storage failures are distinct from invalid messages and genuine replays', async () => {
+  const callbacks = [
+    () => { throw new Error('store unavailable'); },
+    async () => { throw new Error('store unavailable'); },
+    () => undefined, () => 'OK', () => 1,
+  ];
+  for (const callback of callbacks)
+    assert.equal((await verify(fixture(), {
+      ...context(), consumeNonce: callback as Parameters<typeof verify>[1]['consumeNonce'],
+    })).reason, 'nonce store failed');
+  assert.equal((await verify(fixture(), { ...context(), consumeNonce: () => false })).reason, 'replay');
+  assert.equal((await verify({ ...fixture(), sig: '0x' + '00'.repeat(65) }, context())).reason, 'verification failed');
+});
+
+test('nonce remains recorded until expiry when the receiver clock trails the sender', async () => {
+  let now = NOW - 300;
   const seen = new Map<string, number>();
-  const ctx = { selfOrigin: BOB, resolveKeys: only(addr), seen };
-  assert.equal((await verify(s, { ...ctx, now: s.ts })).ok, true);           // first receipt at ts
-  const replay = await verify(s, { ...ctx, now: s.ts + SKEW });              // still fresh (exp>now)
-  assert.equal(replay.reason, 'replay');        // pre-fix this pruned the nonce and returned ok:true
+  const consumeNonce = (key: string, expiry: number) => {
+    for (const [k, t] of seen) if (t <= now) seen.delete(k);
+    if (seen.has(key)) return false;
+    seen.set(key, expiry);
+    return true;
+  };
+  assert.equal((await verify(fixture(), { aud: AUD, consumeNonce, now })).ok, true);
+  now = NOW + 299;
+  assert.equal((await verify(fixture(), { aud: AUD, consumeNonce, now })).reason, 'replay');
 });
 
-// ---- identity label is canonicalized (case-insensitive host, trailing dot) ----
-test('verify returns a lowercased, dot-stripped identity', async () => {
-  const s = await sign({ x: 1 }, { ...signOpts, origin: 'EVE.Example.com.' });
-  const r = await verify(s, { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map(), now: s.ts });
-  assert.deepEqual(r, { ok: true, identity: 'https:eve.example.com', signer: s.signer });
+test('the v2 signature prefix cannot be replaced by v1 or raw personal_sign', async () => {
+  const { sig, ...message } = fixture();
+  for (const prefix of ['marque/v1\n', '']) {
+    const forged = { ...message, sig: signMessage(prefix + JSON.stringify(message), PRIVATE_KEY) };
+    assert.equal((await verify(forged, context())).ok, false);
+  }
 });
 
-// ---- regression: reserved scope must be empty in v1 ----
-test('verify rejects a non-empty scope', async () => {
-  const s = await sign({ x: 1 }, signOpts);
-  const r = await verify({ ...s, scope: 'admin' }, { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map(), now: s.ts });
-  assert.equal(r.reason, 'scope not supported');   // note: tampering scope also breaks the sig, but this check fires first
-});
-
-// ---- regression: concurrent copies of one envelope can't both pass ----
-test('concurrent replay: exactly one of two identical verifies succeeds', async () => {
-  const s = await sign({ x: 1 }, signOpts);
-  const ctx = { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map<string, number>(), now: s.ts };
-  const [a, b] = await Promise.all([verify(s, ctx), verify(s, ctx)]);
-  assert.equal([a, b].filter(r => r.ok).length, 1);
-  assert.equal([a, b].find(r => !r.ok)!.reason, 'replay');
-});
-
-// ---- allow: built-in sender allowlist ----
-test('allow accepts listed senders (bare or prefixed), rejects strangers', async () => {
-  const { s, ok } = await baseline();
-  assert.equal((await verify(s, { ...ok, allow: ['https:eve.example.com'] })).ok, true);
-  const ok2 = { ...ok, seen: new Map<string, number>() };            // fresh nonce store
-  assert.equal((await verify(s, { ...ok2, allow: ['EVE.Example.com.'] })).ok, true);  // bare + case + dot
-  const r = await verify(s, { ...ok, allow: ['carol.example.com'] });
-  assert.equal(r.reason, 'sender not allowed');
-});
-
-// ---- round trip: sign -> verify across both functions ----
-test('round trip ok, cross-audience fails', async () => {
-  const s = await sign({ ping: 1 }, signOpts);
-  const good = await verify(s, { selfOrigin: BOB, resolveKeys: only(s.signer), seen: new Map() });
-  assert.equal(good.ok, true);
-  const bad = await verify(s, { selfOrigin: 'carol.example.com', resolveKeys: only(s.signer), seen: new Map() });
-  assert.equal(bad.reason, 'wrong audience');
-});
-
-// ---- FROZEN TEST VECTOR (regression anchor). ----
-// Fixed {privateKey, payload, ts, exp, nonce} -> exact {payload_hash, signingString, sig, address}.
-// A refactor that changes any signed byte must break this test.
-test('frozen vector byte-compatibility', () => {
-  const pk = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const;
-  const address = privateKeyToAddress(pk);
+test('frozen v2 vector verifies and preserves EIP-191 signature bytes', async () => {
   const payload = { task: 'summarize', url: 'https://x.com/thread/1' };
-
-  const V = {
-    address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
-    payload_hash: '0x4721dc6fbe58a0fe2e9dee3ff4925194ebac7dd00fe23a0afba4bb9e382f2701',
-    signingString:
-      'marque/v1\n{"agent_id":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","aud":"bob.example.com","exp":1751371500,"nonce":"0x9f3c1a7be44d0521c0a8f2e6","origin":"eve.example.com","payload_hash":"0x4721dc6fbe58a0fe2e9dee3ff4925194ebac7dd00fe23a0afba4bb9e382f2701","scope":"","signer":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","ts":1751371200,"v":1}',
-    sig: '0xb0b1d272bd1ab5d5902136ffd96e996f57331bf9837a117a9438cdf2bbdcf9925241b1f39ff4450496055222c2ad707f0f5ae0aa02fffc4871fe6d85bea940a41b',
-  };
-
-  assert.equal(address, V.address);
-  assert.equal(payloadHash(payload), V.payload_hash);
-
-  const c = {
-    v: 1 as const, origin: EVE, signer: address, agent_id: address,
-    scope: '', aud: BOB, ts: 1751371200, exp: 1751371500,
-    nonce: '0x9f3c1a7be44d0521c0a8f2e6' as `0x${string}`,
-    payload_hash: V.payload_hash as `0x${string}`,
-  };
-  assert.equal('marque/v1\n' + canon(c), V.signingString);
-  // Deterministic RFC 6979 signing must reproduce the frozen (viem-era) signature bit-for-bit.
-  assert.equal(signMessage(V.signingString, pk), V.sig);
-});
-
-// verify() accepts a hand-built envelope carrying the frozen signature.
-test('frozen vector verifies end to end', async () => {
-  const msg: Signed = {
-    v: 1, origin: EVE, signer: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
-    agent_id: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', scope: '', aud: BOB,
-    ts: 1751371200, exp: 1751371500, nonce: '0x9f3c1a7be44d0521c0a8f2e6',
-    payload_hash: '0x4721dc6fbe58a0fe2e9dee3ff4925194ebac7dd00fe23a0afba4bb9e382f2701',
-    sig: '0xb0b1d272bd1ab5d5902136ffd96e996f57331bf9837a117a9438cdf2bbdcf9925241b1f39ff4450496055222c2ad707f0f5ae0aa02fffc4871fe6d85bea940a41b',
-    payload: { task: 'summarize', url: 'https://x.com/thread/1' },
-  };
-  const r = await verify(msg, {
-    selfOrigin: BOB, now: 1751371300, seen: new Map(),
-    resolveKeys: async () => ['0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'],
-  });
-  assert.deepEqual(r, { ok: true, identity: `https:${EVE}`, signer: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' });
+  const message = fixture({ payload });
+  assert.equal(message.sig, '0x46cf7c13e9d89bbc4145a64cb6600723b9c16db787c540255c78417ce41b7f2c4364005216c6bda359f33ce0425a40604d76a8de8ddc7727cc45f9fb09582fca1b');
+  assert.deepEqual(await verify(message, context()), { ok: true, signer: ADDRESS });
 });
