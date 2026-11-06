@@ -23,13 +23,13 @@ The complete [example](https://github.com/jackmorganxyz/marque/blob/main/example
 
 ## Install
 
-Node.js 18+ and ESM. The package is `@jackmorganxyz/marque`; core v2 is prepared but not published yet. For now, install a local checkout:
+Node.js 18+ and ESM.
 
 ```sh
-npm install /absolute/path/to/marque
+npm install @jackmorganxyz/marque
 ```
 
-After release, install with `npm install @jackmorganxyz/marque`. The unscoped `marque` package is an unrelated project.
+The unscoped `marque` package is an unrelated project.
 
 ## Use
 

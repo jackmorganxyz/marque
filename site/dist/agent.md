@@ -1,6 +1,6 @@
 # Build with Marque — core v2.0.0
 
-Use `@jackmorganxyz/marque`. Core v2 is prepared but not yet on npm: install this local checkout with `npm install /absolute/path/to/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
+Install core v2 with `npm install @jackmorganxyz/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
 
 ## API
 
