@@ -1,6 +1,6 @@
 # Build with Marque — core v2.0.0
 
-Install core v2 with `npm install @jackmorganxyz/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
+Install core v2 with `npm install @jackmorgan/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
 
 ## API
 
@@ -30,7 +30,7 @@ Run `npm run example` in this checkout. The complete source is [examples/round-t
 ```js
 import assert from 'node:assert/strict';
 import { createECDH } from 'node:crypto';
-import { sign, verify } from '@jackmorganxyz/marque';
+import { sign, verify } from '@jackmorgan/marque';
 
 // Ephemeral demo key. Production keys belong in your application's secret store.
 const key = createECDH('secp256k1');

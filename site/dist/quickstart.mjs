@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createECDH } from 'node:crypto';
-import { sign, verify } from '@jackmorganxyz/marque';
+import { sign, verify } from '@jackmorgan/marque';
 
 // Ephemeral demo key. Production keys belong in your application's secret store.
 const key = createECDH('secp256k1');

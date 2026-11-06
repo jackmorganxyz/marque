@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verify } from '@jackmorganxyz/marque';
+import { verify } from '@jackmorgan/marque';
 
 test('key setup protects its file, never prints the secret, and works with the sender', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'marque-key-test-'));

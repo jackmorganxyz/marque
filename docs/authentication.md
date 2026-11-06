@@ -11,7 +11,7 @@ Link a signing address to an account through an authenticated account or trusted
 The service generates a random challenge, stores it with the intended address and a short expiry (for example 60 seconds), and returns it to the agent. Use cryptographically random bytes, such as Node's `randomBytes(32)`. The requested address is still unverified and grants no access.
 
 ```ts
-import { sign, type Hex } from '@jackmorganxyz/marque';
+import { sign, type Hex } from '@jackmorgan/marque';
 
 const message = await sign({ action: 'login', challenge }, {
   privateKey: process.env.MARQUE_PRIVATE_KEY as Hex,

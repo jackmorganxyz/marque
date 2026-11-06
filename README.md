@@ -26,7 +26,7 @@ The complete [example](https://github.com/jackmorganxyz/marque/blob/main/example
 Node.js 18+ and ESM.
 
 ```sh
-npm install @jackmorganxyz/marque
+npm install @jackmorgan/marque
 ```
 
 The unscoped `marque` package is an unrelated project.
@@ -34,7 +34,7 @@ The unscoped `marque` package is an unrelated project.
 ## Use
 
 ```ts
-import { sign, verify } from '@jackmorganxyz/marque';
+import { sign, verify } from '@jackmorgan/marque';
 
 const message = await sign({ task: 'summarize', text: 'Hello' }, {
   privateKey,        // Dedicated secp256k1 key from your secret store.

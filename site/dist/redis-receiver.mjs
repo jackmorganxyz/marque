@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import { verify } from '@jackmorganxyz/marque';
+import { verify } from '@jackmorgan/marque';
 
 const { REDIS_URL, MARQUE_AUDIENCE, TRUSTED_ADDRESSES } = process.env;
 const addresses = TRUSTED_ADDRESSES?.split(',').map(address => address.trim().toLowerCase());

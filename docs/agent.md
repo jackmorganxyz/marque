@@ -1,6 +1,6 @@
 # Build with Marque — core v2.0.0
 
-Install core v2 with `npm install @jackmorganxyz/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
+Install core v2 with `npm install @jackmorgan/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
 
 ## API
 

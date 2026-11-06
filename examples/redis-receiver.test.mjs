@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createECDH, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createClient } from 'redis';
-import { sign } from '@jackmorganxyz/marque';
+import { sign } from '@jackmorgan/marque';
 
 assert.ok(process.env.REDIS_URL, 'Set REDIS_URL to a running Redis server');
 const key = createECDH('secp256k1');

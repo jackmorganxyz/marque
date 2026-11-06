@@ -1,6 +1,6 @@
 import { createECDH } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { sign } from '@jackmorganxyz/marque';
+import { sign } from '@jackmorgan/marque';
 
 const key = createECDH('secp256k1');
 key.generateKeys();

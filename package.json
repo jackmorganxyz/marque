@@ -1,5 +1,5 @@
 {
-  "name": "@jackmorganxyz/marque",
+  "name": "@jackmorgan/marque",
   "version": "2.0.0",
   "description": "Sign JSON messages and verify their signing addresses. Identity and trust stay with the caller.",
   "type": "module",

@@ -138,7 +138,7 @@
 
       <div class="installation">
         <div><span class="mini-label">Use the local core</span><span class="runtime">Node.js 18+ · ESM</span></div>
-        <div class="install-command"><code id="install-code">npm install @jackmorganxyz/marque</code><button class="copy-button" type="button" data-copy="install-code" aria-label="Copy installation command">Copy <span aria-hidden="true">⧉</span></button></div>
+        <div class="install-command"><code id="install-code">npm install @jackmorgan/marque</code><button class="copy-button" type="button" data-copy="install-code" aria-label="Copy installation command">Copy <span aria-hidden="true">⧉</span></button></div>
         <p>Core v2. Node.js 18+ and ESM. Two runtime exports: <code>sign</code> and <code>verify</code>.</p>
       </div>
 
@@ -148,7 +148,7 @@
 npm run example</code><button class="copy-button" type="button" data-copy="quickstart-command" aria-label="Copy quickstart commands">Copy ⧉</button></div>
         <details class="technical"><summary>The complete example <span class="summary-meta">JavaScript <span class="plus" aria-hidden="true">+</span></span></summary><div class="code-caption"><p>Ephemeral key · local replay cache</p><button class="copy-button" type="button" data-copy="quickstart-code">Copy example</button></div><!-- quickstart:start --><pre><code id="quickstart-code">import assert from 'node:assert/strict';
 import { createECDH } from 'node:crypto';
-import { sign, verify } from '@jackmorganxyz/marque';
+import { sign, verify } from '@jackmorgan/marque';
 
 // Ephemeral demo key. Production keys belong in your application's secret store.
 const key = createECDH('secp256k1');
@@ -194,7 +194,7 @@ console.log('✓ Replayed message rejected');
         </div>
         <div id="sign-panel" class="code-panel" role="tabpanel" aria-labelledby="sign-tab" tabindex="0">
           <div class="code-caption"><p>Sender · keep the private key in your secret store</p><button type="button" class="copy-button" data-copy="sign-code" aria-label="Copy signing example">Copy <span aria-hidden="true">⧉</span></button></div>
-          <pre><code id="sign-code"><span class="syntax-keyword">import</span> { sign, <span class="syntax-keyword">type</span> Hex } <span class="syntax-keyword">from</span> <span class="syntax-string">'@jackmorganxyz/marque'</span>;
+          <pre><code id="sign-code"><span class="syntax-keyword">import</span> { sign, <span class="syntax-keyword">type</span> Hex } <span class="syntax-keyword">from</span> <span class="syntax-string">'@jackmorgan/marque'</span>;
 
 <span class="syntax-keyword">const</span> message = <span class="syntax-keyword">await</span> sign(
   { task: <span class="syntax-string">'summarize'</span>, text: <span class="syntax-string">'Hello'</span> },
@@ -211,7 +211,7 @@ console.log('✓ Replayed message rejected');
         </div>
         <div id="verify-panel" class="code-panel" role="tabpanel" aria-labelledby="verify-tab" tabindex="0" hidden>
           <div class="code-caption"><p>Receiver · verify, check trust, then apply permissions</p><button type="button" class="copy-button" data-copy="verify-code" aria-label="Copy verification example">Copy <span aria-hidden="true">⧉</span></button></div>
-          <pre><code id="verify-code"><span class="syntax-keyword">import</span> { verify } <span class="syntax-keyword">from</span> <span class="syntax-string">'@jackmorganxyz/marque'</span>;
+          <pre><code id="verify-code"><span class="syntax-keyword">import</span> { verify } <span class="syntax-keyword">from</span> <span class="syntax-string">'@jackmorgan/marque'</span>;
 
 <span class="syntax-keyword">const</span> result = <span class="syntax-keyword">await</span> verify(message, {
   aud: <span class="syntax-string">'bob-inbox'</span>,
@@ -246,7 +246,7 @@ console.log('✓ Replayed message rejected');
       <div class="agent-brief"><div><span class="mini-label">Building with a coding agent?</span><h3>Give it the right starting point.</h3><p>The v2 API, a working example, trust boundaries, and the checks your integration needs. One copy.</p></div><button class="button" type="button" data-copy="agent-code">Copy agent instructions <span aria-hidden="true">⧉</span></button></div>
       <details class="technical"><summary>Read the agent instructions <span class="summary-meta">v2.0.0 <span class="plus" aria-hidden="true">+</span></span></summary><!-- agent:start --><pre><code id="agent-code"># Build with Marque — core v2.0.0
 
-Install core v2 with `npm install @jackmorganxyz/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
+Install core v2 with `npm install @jackmorgan/marque`. Node.js 18+, ESM. The only runtime exports are `sign` and `verify`.
 
 ## API
 
@@ -276,7 +276,7 @@ Run `npm run example` in this checkout. The complete source is [examples/round-t
 ```js
 import assert from 'node:assert/strict';
 import { createECDH } from 'node:crypto';
-import { sign, verify } from '@jackmorganxyz/marque';
+import { sign, verify } from '@jackmorgan/marque';
 
 // Ephemeral demo key. Production keys belong in your application's secret store.
 const key = createECDH('secp256k1');
@@ -337,7 +337,7 @@ export MARQUE_AUDIENCE=bob-inbox
 export REDIS_URL=redis://127.0.0.1:6379
 node examples/send.mjs | node examples/redis-receiver.mjs</code></pre>
         <div class="code-caption"><p>examples/redis-receiver.mjs · node-redis 5</p><button class="copy-button" type="button" data-copy="receiver-code">Copy receiver</button></div><!-- receiver:start --><pre><code id="receiver-code">import { createClient } from 'redis';
-import { verify } from '@jackmorganxyz/marque';
+import { verify } from '@jackmorgan/marque';
 
 const { REDIS_URL, MARQUE_AUDIENCE, TRUSTED_ADDRESSES } = process.env;
 const addresses = TRUSTED_ADDRESSES?.split(',').map(address =&gt; address.trim().toLowerCase());

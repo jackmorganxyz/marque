@@ -18,15 +18,15 @@ npm pack --dry-run
 npm pack
 ```
 
-The tarball contains compiled ESM, TypeScript declarations, README, security guidance, package metadata and the license. Guides, examples and tests remain in the repository. Test the tarball in a separate consumer with `npm install /absolute/path/to/jackmorganxyz-marque-2.0.0.tgz` before releasing.
+The tarball contains compiled ESM, TypeScript declarations, README, security guidance, package metadata and the license. Guides, examples and tests remain in the repository. Test the tarball in a separate consumer with `npm install /absolute/path/to/jackmorgan-marque-2.0.0.tgz` before releasing.
 
-The package name is `@jackmorganxyz/marque`, with public access configured in `package.json`. Publishing requires an npm account with access to that scope.
+The package name is `@jackmorgan/marque`, with public access configured in `package.json`. Publishing requires an npm account with access to that scope.
 
 To release after checking the tarball:
 
 1. Sign in with `npm login`, and confirm account access using `npm whoami`.
 2. Confirm the version is unused on the registry and the repository changes are committed.
 3. Run `npm publish --access public`; the `prepublishOnly` hook runs `npm run check` again. Follow npm's account/2FA requirements.
-4. Verify the registry release and update the README to make `npm install @jackmorganxyz/marque` the default installation command.
+4. Verify the registry release and update the README to make `npm install @jackmorgan/marque` the default installation command.
 
 See npm's [publishing guide](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/) and [lifecycle documentation](https://docs.npmjs.com/cli/v11/using-npm/scripts/). Publication is a separate action from building or packing. There is no automatic publishing workflow.
