@@ -1,9 +1,12 @@
 {
-  "name": "marque",
-  "version": "1.0.0",
-  "description": "Sign an outbound agent message with a secp256k1 wallet key and verify which https origin sent it — no shared secret.",
+  "name": "@jackmorganxyz/marque",
+  "version": "2.0.0",
+  "description": "Sign JSON messages and verify their signing addresses. Identity and trust stay with the caller.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Jack Morgan <contact@jackmorgan.xyz>",
   "repository": {
     "type": "git",
@@ -11,7 +14,13 @@
   },
   "bugs": "https://github.com/jackmorganxyz/marque/issues",
   "homepage": "https://github.com/jackmorganxyz/marque#readme",
-  "keywords": ["agent", "signing", "identity", "verify", "well-known", "eip-191", "secp256k1", "a2a"],
+  "keywords": [
+    "agent",
+    "signing",
+    "verify",
+    "eip-191",
+    "secp256k1"
+  ],
   "sideEffects": false,
   "main": "./dist/marque.js",
   "types": "./dist/marque.d.ts",
@@ -19,26 +28,23 @@
     ".": {
       "types": "./dist/marque.d.ts",
       "import": "./dist/marque.js"
-    },
-    "./x": {
-      "types": "./dist/x.d.ts",
-      "import": "./dist/x.js"
     }
-  },
-  "bin": {
-    "marque": "./dist/bin/marque.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "SECURITY.md"
   ],
   "scripts": {
-    "build": "tsc && rm -f dist/*.test.*",
+    "build": "rm -rf dist && tsc && rm -f dist/marque.test.*",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test marque.test.ts x.test.ts",
-    "marque": "tsx bin/marque.ts",
+    "test": "node --import tsx --test marque.test.ts site/demo.test.mjs examples/keygen.test.mjs",
+    "test:redis": "npm run build && node --test examples/redis-receiver.test.mjs",
+    "build:site": "node site/build.mjs",
+    "example": "npm run build && node examples/round-trip.mjs",
+    "check": "npm run build && npm test && node examples/round-trip.mjs && npm run build:site",
     "prepare": "npm run build",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm run check"
   },
   "engines": {
     "node": ">=18"
@@ -49,6 +55,8 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "esbuild": "^0.28.2",
+    "redis": "~5.11.0",
     "tsx": "^4",
     "typescript": "^5"
   }

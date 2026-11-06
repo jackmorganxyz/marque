@@ -1,20 +1,10 @@
-// eth.ts — minimal Ethereum-style signing kit for Marque. Deps: @noble/curves,
-// @noble/hashes (the audited primitives viem itself builds on — byte-identical
-// signatures, ~2% of the install size).
-//
-// Scope is exactly what Marque needs, nothing more: keygen, EIP-55 address,
-// EIP-191 personal_sign, address recovery, keccak256. No ABI, no RPC, no chain.
+// Internal secp256k1 address and EIP-191 signature helpers. No chain access.
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { bytesToHex, hexToBytes, utf8ToBytes, concatBytes, randomBytes } from '@noble/hashes/utils';
 
 export type Hex = `0x${string}`;
 export type Address = `0x${string}`;
-
-/** keccak256 of the UTF-8 bytes of a string, as 0x-hex. */
-export function keccak256(data: string): Hex {
-  return ('0x' + bytesToHex(keccak_256(utf8ToBytes(data)))) as Hex;
-}
 
 export const randomHex = (bytes: number): Hex => ('0x' + bytesToHex(randomBytes(bytes))) as Hex;
 
@@ -38,9 +28,6 @@ export function isAddressEqual(a: string, b: string): boolean {
 const pubToAddress = (uncompressedPub: Uint8Array): Address =>
   // address = last 20 bytes of keccak256(pubkey minus the 0x04 prefix byte)
   checksumAddress('0x' + bytesToHex(keccak_256(uncompressedPub.subarray(1)).subarray(12)));
-
-export const generatePrivateKey = (): Hex =>
-  ('0x' + bytesToHex(secp256k1.utils.randomPrivateKey())) as Hex;
 
 export function privateKeyToAddress(privateKey: Hex): Address {
   return pubToAddress(secp256k1.getPublicKey(strip0x(privateKey), false));
