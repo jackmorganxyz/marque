@@ -10,9 +10,9 @@
   <meta property="og:description" content="Public-key signatures for agent messages. Two functions. Your trust rules.">
   <meta property="og:type" content="website">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23191d19'/%3E%3Cpath d='M8 23V9l8 10 8-10v14' fill='none' stroke='%23f8f9f7' stroke-width='2.4' stroke-linejoin='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css">
-  <script src="main.js" defer></script>
-  <script src="playground.js" type="module"></script>
+  <link rel="stylesheet" href="styles.css?v=64399f5857da">
+  <script src="main.js?v=c514b7257b5b" defer></script>
+  <script src="playground.js?v=bcbd8373cfdc" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -98,34 +98,39 @@
     <section id="try" class="section wrap" aria-labelledby="try-title">
       <div class="section-heading">
         <span class="section-index">02 / Try it</span>
-        <div><h2 id="try-title">A small message.<br>A real signature.</h2><p class="section-intro">Sign, verify, then try breaking it. This runs the real Marque core in your browser, with a temporary key. Nothing you type is sent anywhere.</p></div>
+        <div><h2 id="try-title">A small message.<br>A real signature.</h2><p class="section-intro">Start with a signed example. Verify it, then see why a changed message or a second delivery gets rejected. Everything runs in your browser. Nothing you type is sent anywhere.</p></div>
       </div>
       <div class="playground">
         <div class="demo-editor">
+          <h3>1. Sign a message</h3>
+          <p class="demo-help">The example is signed for you. Edit it and sign a fresh message whenever you want to start again.</p>
           <label for="demo-payload">Message <span>Plain JSON</span></label>
           <textarea id="demo-payload" rows="6" maxlength="4000" spellcheck="false">{
   "task": "summarize",
   "text": "Hello from my agent."
 }</textarea>
-          <label for="demo-audience">Receiver’s configured ID</label>
-          <input id="demo-audience" value="bob-inbox" maxlength="100" spellcheck="false" autocomplete="off">
-          <div class="demo-actions"><button class="button" type="button" data-demo="sign" disabled>Sign &amp; verify <span aria-hidden="true">↗</span></button><button class="quiet-button" type="button" data-demo="edits" disabled>Verify edits</button></div>
-          <div class="demo-scenarios"><span>Then try</span><button type="button" data-demo="tamper" disabled>Change the message</button><button type="button" data-demo="recipient" disabled>Wrong recipient</button><button type="button" data-demo="replay" disabled>Replay it</button></div>
+          <label for="demo-audience">Receiver ID</label>
+          <input id="demo-audience" value="bob-inbox" maxlength="100" spellcheck="false" autocomplete="off" aria-describedby="demo-audience-help">
+          <p id="demo-audience-help" class="demo-help">Signing addresses the message to this receiver. Change this afterward to test a different receiver.</p>
+          <div class="demo-actions"><button class="quiet-button" type="button" data-demo="sign" disabled>Sign a fresh message</button><button class="quiet-button" type="button" data-demo="reset" disabled>Reset example</button></div>
         </div>
         <div class="demo-results">
+          <h3>2. Verify at the receiver</h3>
+          <button class="button" type="button" data-demo="verify" disabled>Verify message <span aria-hidden="true">↗</span></button>
           <div role="status" aria-live="polite" aria-atomic="true">
-            <span class="mini-label">Message verification</span><p id="demo-proof" class="demo-result">Ready when you are</p>
+            <p id="demo-proof" class="demo-result" tabindex="-1">Preparing the example…</p>
             <p id="demo-detail">Loading the signing demo…</p>
           </div>
           <div class="demo-trust-block">
-            <span class="mini-label">Application trust · demo allowlist</span><p id="demo-policy" class="demo-result" role="status" aria-live="polite">Not evaluated</p>
+            <h3>3. Decide whether to trust the sender</h3><p id="demo-policy" class="demo-result" role="status" aria-live="polite">Waiting for verification</p>
             <label class="trust-toggle"><input id="demo-trust" type="checkbox" checked> Allow the address created by this demo</label>
-            <p>Turn this off: a valid signature still verifies, but your app refuses the sender.</p>
+            <p>A valid signature proves which key signed the message. This separate app rule decides whether that address is allowed.</p>
           </div>
           <span class="mini-label">This demo’s public address</span><code id="demo-address">Created when you sign</code>
         </div>
       </div>
-      <details class="technical demo-envelope"><summary>Inspect the envelope <span class="summary-meta">JSON <span class="plus" aria-hidden="true">+</span></span></summary><pre><code id="demo-envelope">Sign a message to see the full envelope.</code></pre></details>
+      <div class="demo-scenarios"><span>Try a rejection</span><p>Each button changes or resends the signed message, then verifies it. “Send it again” unlocks after a successful verification.</p><button type="button" data-demo="tamper" disabled>Change the message</button><button type="button" data-demo="recipient" disabled>Use a wrong receiver</button><button type="button" data-demo="replay" disabled>Send it again</button></div>
+      <details class="technical demo-envelope" open><summary>Inspect the envelope <span class="summary-meta">JSON <span class="plus" aria-hidden="true">+</span></span></summary><p class="demo-help">The envelope is the JSON delivered to the receiver: <code>payload</code> is your message, <code>aud</code> its intended receiver, <code>sig</code> its signature, and <code>nonce</code> a one-use ID. Signing does not hide the message.</p><p id="demo-envelope-note" class="demo-help">Preparing a signed example…</p><pre tabindex="0" aria-label="Message envelope JSON"><code id="demo-envelope">Loading…</code></pre></details>
       <p class="example-note">The demo’s key and nonce cache disappear when you reload. Deployed receivers need shared, durable replay storage. Allowing an address still leaves payload validation and action permissions to your app.</p>
       <noscript><p class="example-note">Enable JavaScript to try the playground, or run the complete local example below.</p></noscript>
     </section>
